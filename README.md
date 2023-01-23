@@ -11,6 +11,15 @@ The format of the configuration file (and this project itself) is heavily inspir
 ```
 .shell pwsh # can be one of cmd | pwsh | powershell
 
+# Specify different behaviour depending on the app
+alt + n [
+    # ProcessName as shown by `Get-Process`
+    Firefox       : echo "hello firefox"
+    
+    # Spaces are fine, no quotes required
+    Google Chrome : echo "hello chrome"
+]
+
 # reload configuration
 alt + o : taskkill /f /im whkd.exe && Start-Process whkd -WindowStyle hidden
 

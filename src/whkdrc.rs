@@ -10,6 +10,7 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Whkdrc {
     pub shell: Shell,
+    pub app_bindings: Vec<(Vec<String>, Vec<HotkeyBinding>)>,
     pub bindings: Vec<HotkeyBinding>,
 }
 

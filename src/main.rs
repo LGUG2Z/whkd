@@ -8,6 +8,7 @@ use color_eyre::eyre::eyre;
 use color_eyre::eyre::Result;
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
+use std::collections::HashMap;
 use std::io::Write;
 use std::process::ChildStdin;
 use std::process::Command;
@@ -31,11 +32,12 @@ lazy_static! {
     static ref SESSION_STDIN: Mutex<Option<ChildStdin>> = Mutex::new(None);
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HkmData {
     pub mod_keys: Vec<ModKey>,
     pub vkey: VKey,
     pub command: String,
+    pub process_name: Option<String>,
 }
 
 impl HkmData {
@@ -71,6 +73,7 @@ impl TryFrom<&HotkeyBinding> for HkmData {
             mod_keys,
             vkey,
             command: value.command.clone(),
+            process_name: value.process_name.clone(),
         })
     }
 }
@@ -116,6 +119,48 @@ fn main() -> Result<()> {
     }
 
     let mut hkm = HotkeyManager::new();
+
+    let mut mapped = HashMap::new();
+    for (keys, app_bindings) in &WHKDRC.app_bindings {
+        for binding in app_bindings {
+            let data = HkmData::try_from(binding)?;
+            mapped
+                .entry(keys.join("+"))
+                .or_insert_with(Vec::new)
+                .push(data);
+        }
+    }
+
+    for (_, v) in mapped {
+        let vkey = v[0].vkey;
+        let mod_keys = v[0].mod_keys.as_slice();
+
+        let v = v.clone();
+        hkm.register(vkey, mod_keys, move || {
+            if let Some(session_stdin) = SESSION_STDIN.lock().as_mut() {
+                for e in &v {
+                    let cmd = &e.command;
+                    if let Some(proc) = &e.process_name {
+                        match active_win_pos_rs::get_active_window() {
+                            Ok(window) => {
+                                if window.process_name == *proc {
+                                    if matches!(WHKDRC.shell, Shell::Pwsh | Shell::Powershell) {
+                                        println!("{cmd}");
+                                    }
+
+                                    writeln!(session_stdin, "{cmd}")
+                                        .expect("failed to execute command");
+                                }
+                            }
+                            Err(error) => {
+                                dbg!(error);
+                            }
+                        }
+                    }
+                }
+            }
+        })?;
+    }
 
     for binding in &WHKDRC.bindings {
         HkmData::try_from(binding)?.register(&mut hkm)?;

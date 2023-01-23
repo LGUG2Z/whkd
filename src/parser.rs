@@ -6,6 +6,7 @@ use chumsky::prelude::*;
 pub struct HotkeyBinding {
     pub keys: Vec<String>,
     pub command: String,
+    pub process_name: Option<String>,
 }
 
 #[must_use]
@@ -36,18 +37,67 @@ pub fn parser() -> impl Parser<char, Whkdrc, Error = Simple<char>> {
         .map(|c| c.0)
         .collect::<String>();
 
+    let process_name = text::ident()
+        .padded()
+        .repeated()
+        .at_least(1)
+        .map(|a| a.join(" "));
+
+    let process_mapping = process_name
+        .then_ignore(delimiter)
+        .then(command)
+        .padded()
+        .padded_by(comment.repeated())
+        .repeated()
+        .at_least(1);
+
+    let process_command_map = just("[")
+        .ignore_then(process_mapping)
+        .padded()
+        .padded_by(comment.repeated())
+        .then_ignore(just("]"))
+        .collect::<Vec<(String, String)>>();
+
     let binding = hotkeys.then_ignore(delimiter).then(command);
+    let process_bindings = hotkeys.then(process_command_map);
 
     shell
         .then(
+            process_bindings
+                .map(|(keys, apps_commands)| {
+                    let mut collected = vec![];
+                    for (app, command) in apps_commands {
+                        collected.push(HotkeyBinding {
+                            keys: keys.clone(),
+                            command,
+                            process_name: Option::from(app),
+                        });
+                    }
+
+                    (keys, collected)
+                })
+                .padded()
+                .padded_by(comment.repeated())
+                .repeated()
+                .at_least(0),
+        )
+        .then(
             binding
-                .map(|(keys, command)| HotkeyBinding { keys, command })
+                .map(|(keys, command)| HotkeyBinding {
+                    keys,
+                    command,
+                    process_name: None,
+                })
                 .padded()
                 .padded_by(comment.repeated())
                 .repeated()
                 .at_least(1),
         )
-        .map(|(shell, bindings)| Whkdrc { shell, bindings })
+        .map(|((shell, app_bindings), bindings)| Whkdrc {
+            shell,
+            app_bindings,
+            bindings,
+        })
 }
 
 #[cfg(test)]
@@ -58,6 +108,15 @@ mod tests {
     fn test_parse() {
         let src = r#"
 .shell cmd
+
+# Specify different behaviour depending on the app
+alt + n [
+    # ProcessName as shown by `Get-Process`
+    Firefox       : echo "hello firefox"
+
+    # Spaces are fine, no quotes required
+    Google Chrome : echo "hello chrome"
+]
 
 # leading newlines are fine
 # line comments should parse and be ignored
@@ -77,26 +136,46 @@ alt + 1 : komorebic focus-workspace 0 # digits are fine in the hotkeys section
         let output = parser().parse(src);
         let expected = Whkdrc {
             shell: Shell::Cmd,
+            app_bindings: vec![(
+                vec![String::from("alt"), String::from("n")],
+                vec![
+                    HotkeyBinding {
+                        keys: vec![String::from("alt"), String::from("n")],
+                        command: String::from(r#"echo "hello firefox""#),
+                        process_name: Option::from("Firefox".to_string()),
+                    },
+                    HotkeyBinding {
+                        keys: vec![String::from("alt"), String::from("n")],
+                        command: String::from(r#"echo "hello chrome""#),
+                        process_name: Option::from("Google Chrome".to_string()),
+                    },
+                ],
+            )],
             bindings: vec![
                 HotkeyBinding {
                     keys: vec![String::from("alt"), String::from("h")],
                     command: String::from("komorebic focus left"),
+                    process_name: None,
                 },
                 HotkeyBinding {
                     keys: vec![String::from("alt"), String::from("j")],
                     command: String::from("komorebic focus down"),
+                    process_name: None,
                 },
                 HotkeyBinding {
                     keys: vec![String::from("alt"), String::from("k")],
                     command: String::from("komorebic focus up"),
+                    process_name: None,
                 },
                 HotkeyBinding {
                     keys: vec![String::from("alt"), String::from("l")],
                     command: String::from("komorebic focus right"),
+                    process_name: None,
                 },
                 HotkeyBinding {
                     keys: vec![String::from("alt"), String::from("1")],
                     command: String::from("komorebic focus-workspace 0"),
+                    process_name: None,
                 },
             ],
         };
