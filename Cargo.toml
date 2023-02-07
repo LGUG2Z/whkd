@@ -1,6 +1,11 @@
 [package]
 name = "whkd"
 version = "0.1.0"
+authors = ["Jade Iqbal <jadeiqbal@fastmail.com>"]
+description = "A simple hotkey daemon for Windows"
+categories = ["hotkey-daemon", "windows"]
+repository = "https://github.com/LGUG2Z/whkd"
+license = "MIT"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

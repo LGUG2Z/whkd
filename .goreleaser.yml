@@ -1,0 +1,35 @@
+# Adapted from https://jondot.medium.com/shipping-rust-binaries-with-goreleaser-d5aa42a46be0
+project_name: whkd
+
+before:
+  hooks:
+    - powershell.exe -Command "New-Item -Path . -Name dummy.go -ItemType file -Force"
+    - powershell.exe -Command "Add-Content -Path .\dummy.go -Value 'package main'"
+    - powershell.exe -Command "Add-Content -Path .\dummy.go -Value 'func main() {}'"
+
+builds:
+  - id: whkd
+    main: dummy.go
+    goos: ["windows"]
+    goarch: ["amd64"]
+    binary: whkd
+    hooks:
+      post:
+        - mkdir -p dist/windows_amd64
+        - cp ".\target\x86_64-pc-windows-msvc\release\whkd.exe" ".\dist\whkd_windows_amd64_v1\whkd.exe"
+
+archives:
+  - replacements:
+      windows: pc-windows-msvc
+      amd64: x86_64
+    format: zip
+    name_template: "{{ .ProjectName }}-{{ .Version }}-{{ .Arch }}-{{ .Os }}"
+    files:
+      - LICENSE
+      - CHANGELOG.md
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
