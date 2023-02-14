@@ -81,6 +81,15 @@ impl TryFrom<&HotkeyBinding> for HkmData {
 fn main() -> Result<()> {
     color_eyre::install()?;
 
+    let mut whkdrc_check = dirs::home_dir().expect("no home directory found");
+    whkdrc_check.push(".config");
+    whkdrc_check.push("whkdrc");
+
+    if !whkdrc_check.exists() {
+        println!("No whkdrc file detected. Please place a configuration file at ~/.config/whkdrc and try again.");
+        return Ok(());
+    }
+
     let shell_binary = WHKDRC.shell.to_string();
 
     match WHKDRC.shell {
