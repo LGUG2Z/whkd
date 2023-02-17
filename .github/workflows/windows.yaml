@@ -34,16 +34,19 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
+
       - name: Prep cargo dirs
         run: |
           New-Item "${env:USERPROFILE}\.cargo\registry" -ItemType Directory -Force
           New-Item "${env:USERPROFILE}\.cargo\git" -ItemType Directory -Force
         shell: powershell
+
       - name: Set environment variables appropriately for the build
         run: |
           echo "%USERPROFILE%\.cargo\bin" | Out-File -Append -FilePath $env:GITHUB_PATH -Encoding utf8
           echo "TARGET=${{ matrix.target }}" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
           echo "SKIP_TESTS=" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
+
       - name: Cache cargo registry, git trees and binaries
         uses: actions/cache@v3
         with:
@@ -52,17 +55,20 @@ jobs:
             ~/.cargo/git
             ~/.cargo/bin
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
       - name: Get rustc commit hash
         id: cargo-target-cache
         run: |
           echo "::set-output name=rust_hash::$(rustc -Vv | grep commit-hash | awk '{print $2}')"
         shell: bash
+
       - name: Cache cargo build
         uses: actions/cache@v3
         with:
           path: target
           key: ${{ github.base_ref }}-${{ github.head_ref }}-${{ matrix.target }}-cargo-target-dir-${{ steps.cargo-target-cache.outputs.rust_hash }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ github.base_ref }}-${{ matrix.target }}-cargo-target-dir-${{ steps.cargo-target-cache.outputs.rust_hash }}-${{ hashFiles('**/Cargo.lock') }}
+
       - name: Install Rustup using win.rustup.rs
         run: |
           # Disable the download progress bar which can cause perf issues
@@ -70,19 +76,24 @@ jobs:
           Invoke-WebRequest https://win.rustup.rs/ -OutFile rustup-init.exe
           .\rustup-init.exe -y --default-host=x86_64-pc-windows-msvc --profile=minimal
         shell: powershell
+
       - name: Ensure stable toolchain is up to date
         run: rustup update stable
         shell: bash
+
       - name: Install the target
         run: |
           rustup target install ${{ matrix.target }}
+
       - name: Run a full build
         run: |
           cargo build --locked --release --target ${{ matrix.target }}
+
       - name: Create MSI installer
         run: |
           cargo install cargo-wix
           cargo wix --nocapture --target ${{ matrix.target }}
+
       - name: Upload the built artifacts
         uses: actions/upload-artifact@v3
         with:
@@ -100,6 +111,7 @@ jobs:
         run: |
           if ! type kokai >/dev/null; then cargo install --locked kokai --force; fi
           kokai release --no-emoji --add-links github:commits,issues --ref "$(git tag --points-at HEAD)" >"CHANGELOG.md"
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v3
         if: startsWith(github.ref, 'refs/tags/v')
@@ -108,8 +120,16 @@ jobs:
           args: release --skip-validate --rm-dist --release-notes=CHANGELOG.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Add MSI to release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/v')
         with:
           files: "target/wix/whkd-*.msi"
+
+      - name: Publish to WinGet
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: vedantmgoyal2009/winget-releaser@v2
+        with:
+          identifier: LGUG2Z.whkd
+          token: ${{ secrets.WINGET_TOKEN }}
