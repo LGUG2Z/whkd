@@ -44,7 +44,7 @@ impl HkmData {
     pub fn register(&self, hkm: &mut HotkeyManager<()>) -> Result<()> {
         let cmd = self.command.clone();
 
-        hkm.register(self.vkey, self.mod_keys.as_slice(), move || {
+        if let Err(error) = hkm.register(self.vkey, self.mod_keys.as_slice(), move || {
             if let Some(session_stdin) = SESSION_STDIN.lock().as_mut() {
                 if matches!(WHKDRC.shell, Shell::Pwsh | Shell::Powershell) {
                     println!("{cmd}");
@@ -52,7 +52,12 @@ impl HkmData {
 
                 writeln!(session_stdin, "{cmd}").expect("failed to execute command");
             }
-        })?;
+        }) {
+            eprintln!(
+                "Unable to bind '{:?} + {}' to '{}' (error: {error}), ignoring this binding and continuing...",
+                self.mod_keys, self.vkey, self.command
+            );
+        }
 
         Ok(())
     }
