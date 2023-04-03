@@ -17,6 +17,7 @@ use windows_hotkeys::error::HkError;
 use windows_hotkeys::keys::ModKey;
 use windows_hotkeys::keys::VKey;
 use windows_hotkeys::HotkeyManager;
+use windows_hotkeys::HotkeyManagerImpl;
 
 mod parser;
 mod whkdrc;
