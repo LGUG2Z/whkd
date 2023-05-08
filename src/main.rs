@@ -10,6 +10,7 @@ use lazy_static::lazy_static;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::io::Write;
+use std::path::PathBuf;
 use std::process::ChildStdin;
 use std::process::Command;
 use std::process::Stdio;
@@ -24,11 +25,24 @@ mod whkdrc;
 
 lazy_static! {
     static ref WHKDRC: Whkdrc = {
-        let mut home = dirs::home_dir().expect("no home directory found");
-        home.push(".config");
-        home.push("whkdrc");
+        // config file defaults to `~/.config/whkdrc`, or `<WHKD_CONFIG_HOME>/whkdrc`
+        let mut home  = std::env::var("WHKD_CONFIG_HOME").map_or_else(
+            |_| dirs::home_dir().expect("no home directory found").join(".config"),
+            |home_path| {
+                let home = PathBuf::from(&home_path);
 
-        Whkdrc::load(&home).expect("could not load whkdrc")
+                if home.as_path().is_dir() {
+                    home
+                } else {
+                    panic!(
+                        "$Env:WHKD_CONFIG_HOME is set to '{}', which is not a valid directory",
+                        home_path
+                    );
+                }
+            },
+        );
+        home.push("whkdrc");
+        Whkdrc::load(&home).expect(&format!("could not load whkdrc from {:?}", home))
     };
     static ref SESSION_STDIN: Mutex<Option<ChildStdin>> = Mutex::new(None);
 }

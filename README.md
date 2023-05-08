@@ -2,7 +2,8 @@
 
 _whkd_ is a simple hotkey daemon for Windows that reacts to input events by executing commands.
 
-Its configuration file (`~/.config/whkdrc`) is a series of bindings which define the associations between the input events and the commands.
+Its configuration file (`whkdrc`) is a series of bindings which define the associations between the input events and the commands.
+By default, this file should be located in `~/.config/`, or an alternative can be set using the environment variable `WHKD_CONFIG_HOME`.
 
 The format of the configuration file (and this project itself) is heavily inspired by `skhd` and `sxhkd`.
 
