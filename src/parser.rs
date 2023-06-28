@@ -32,7 +32,7 @@ pub fn parser() -> impl Parser<char, Whkdrc, Error = Simple<char>> {
 
     let delimiter = just(":").padded();
 
-    let command = take_until(choice((comment, text::newline())))
+    let command = take_until(choice((comment, text::newline(), end())))
         .padded()
         .map(|c| c.0)
         .collect::<String>();
@@ -45,7 +45,7 @@ pub fn parser() -> impl Parser<char, Whkdrc, Error = Simple<char>> {
 
     let process_mapping = process_name
         .then_ignore(delimiter)
-        .then(command)
+        .then(command.clone())
         .padded()
         .padded_by(comment.repeated())
         .repeated()
@@ -103,6 +103,29 @@ pub fn parser() -> impl Parser<char, Whkdrc, Error = Simple<char>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_single_line_parse() {
+        let src = r#"
+.shell pwsh # can be one of cmd | pwsh | powershell
+
+alt + h : echo "Hello""#;
+
+        let output = parser().parse(src);
+        let expected = Whkdrc {
+            shell: Shell::Pwsh,
+            app_bindings: vec![],
+            bindings: vec![
+                HotkeyBinding {
+                    keys: vec![String::from("alt"), String::from("h")],
+                    command: String::from("echo \"Hello\""),
+                    process_name: None,
+                },
+            ],
+        };
+
+        assert_eq!(output.unwrap(), expected);
+    }
 
     #[test]
     fn test_parse() {
