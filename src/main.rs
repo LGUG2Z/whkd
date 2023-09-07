@@ -4,6 +4,7 @@
 use crate::parser::HotkeyBinding;
 use crate::whkdrc::Shell;
 use crate::whkdrc::Whkdrc;
+use clap::Parser;
 use color_eyre::eyre::eyre;
 use color_eyre::eyre::Result;
 use lazy_static::lazy_static;
@@ -35,14 +36,13 @@ lazy_static! {
                     home
                 } else {
                     panic!(
-                        "$Env:WHKD_CONFIG_HOME is set to '{}', which is not a valid directory",
-                        home_path
+                        "$Env:WHKD_CONFIG_HOME is set to '{home_path}', which is not a valid directory",
                     );
                 }
             },
         );
         home.push("whkdrc");
-        Whkdrc::load(&home).expect(&format!("could not load whkdrc from {:?}", home))
+        Whkdrc::load(&home).unwrap_or_else(|_| panic!("could not load whkdrc from {home:?}"))
     };
     static ref SESSION_STDIN: Mutex<Option<ChildStdin>> = Mutex::new(None);
 }
@@ -56,12 +56,12 @@ pub struct HkmData {
 }
 
 impl HkmData {
-    pub fn register(&self, hkm: &mut HotkeyManager<()>) -> Result<()> {
+    pub fn register(&self, hkm: &mut HotkeyManager<()>, shell: Shell) -> Result<()> {
         let cmd = self.command.clone();
 
         if let Err(error) = hkm.register(self.vkey, self.mod_keys.as_slice(), move || {
             if let Some(session_stdin) = SESSION_STDIN.lock().as_mut() {
-                if matches!(WHKDRC.shell, Shell::Pwsh | Shell::Powershell) {
+                if matches!(shell, Shell::Pwsh | Shell::Powershell) {
                     println!("{cmd}");
                 }
 
@@ -98,12 +98,29 @@ impl TryFrom<&HotkeyBinding> for HkmData {
     }
 }
 
+#[derive(Parser)]
+#[clap(author, about, version)]
+struct Cli {
+    /// Path to whkdrc
+    #[clap(action, short, long)]
+    config: Option<PathBuf>,
+}
+
 fn main() -> Result<()> {
     color_eyre::install()?;
+    let cli = Cli::parse();
 
-    let shell_binary = WHKDRC.shell.to_string();
+    let whkdrc = cli.config.map_or_else(
+        || WHKDRC.clone(),
+        |config| {
+            Whkdrc::load(&config)
+                .unwrap_or_else(|_| panic!("could not load whkdrc from {config:?}"))
+        },
+    );
 
-    match WHKDRC.shell {
+    let shell_binary = whkdrc.shell.to_string();
+
+    match whkdrc.shell {
         Shell::Powershell | Shell::Pwsh => {
             let mut process = Command::new(&shell_binary)
                 .stdin(Stdio::piped())
@@ -141,7 +158,7 @@ fn main() -> Result<()> {
     let mut hkm = HotkeyManager::new();
 
     let mut mapped = HashMap::new();
-    for (keys, app_bindings) in &WHKDRC.app_bindings {
+    for (keys, app_bindings) in &whkdrc.app_bindings {
         for binding in app_bindings {
             let data = HkmData::try_from(binding)?;
             mapped
@@ -163,8 +180,8 @@ fn main() -> Result<()> {
                     if let Some(proc) = &e.process_name {
                         match active_win_pos_rs::get_active_window() {
                             Ok(window) => {
-                                if window.process_name == *proc {
-                                    if matches!(WHKDRC.shell, Shell::Pwsh | Shell::Powershell) {
+                                if window.app_name == *proc {
+                                    if matches!(whkdrc.shell, Shell::Pwsh | Shell::Powershell) {
                                         println!("{cmd}");
                                     }
 
@@ -182,8 +199,8 @@ fn main() -> Result<()> {
         })?;
     }
 
-    for binding in &WHKDRC.bindings {
-        HkmData::try_from(binding)?.register(&mut hkm)?;
+    for binding in &whkdrc.bindings {
+        HkmData::try_from(binding)?.register(&mut hkm, whkdrc.shell)?;
     }
 
     hkm.event_loop();

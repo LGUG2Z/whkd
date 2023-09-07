@@ -115,13 +115,11 @@ alt + h : echo "Hello""#;
         let expected = Whkdrc {
             shell: Shell::Pwsh,
             app_bindings: vec![],
-            bindings: vec![
-                HotkeyBinding {
-                    keys: vec![String::from("alt"), String::from("h")],
-                    command: String::from("echo \"Hello\""),
-                    process_name: None,
-                },
-            ],
+            bindings: vec![HotkeyBinding {
+                keys: vec![String::from("alt"), String::from("h")],
+                command: String::from("echo \"Hello\""),
+                process_name: None,
+            }],
         };
 
         assert_eq!(output.unwrap(), expected);
