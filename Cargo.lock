@@ -1001,7 +1001,7 @@ dependencies = [
 
 [[package]]
 name = "whkd"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "active-win-pos-rs",
  "chumsky",
@@ -1055,9 +1055,9 @@ dependencies = [
 
 [[package]]
 name = "windows-hotkeys"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae41f6f7db2f55a083bfc3bc362586aa198d02a7fbea0138fa0bdad282c01ec2"
+checksum = "e0020b6838b9b33f7050e796b405935cbb9f7fe0dccba5199242d9c1371a6aa7"
 dependencies = [
  "thiserror",
  "winapi",

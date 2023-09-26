@@ -156,6 +156,7 @@ fn main() -> Result<()> {
     }
 
     let mut hkm = HotkeyManager::new();
+    hkm.set_no_repeat(false);
 
     let mut mapped = HashMap::new();
     for (keys, app_bindings) in &whkdrc.app_bindings {
