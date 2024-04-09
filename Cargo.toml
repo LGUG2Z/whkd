@@ -1,6 +1,6 @@
 [package]
 name = "whkd"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Jade Iqbal <jadeiqbal@fastmail.com>"]
 description = "A simple hotkey daemon for Windows"
 categories = ["hotkey-daemon", "windows"]
