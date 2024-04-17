@@ -28,7 +28,7 @@ alt + n [
 alt + o : taskkill /f /im whkd.exe && Start-Process whkd -WindowStyle hidden
 
 # app shortcuts
-alt + f : if ($wshell.AppActivate('Firefox') -eq $False) { start firefox }
+alt + f : if ($wshell.AppActivate('mozilla firefox') -eq $False) { start firefox }
 
 # focus windows with komorebi
 alt + h : komorebic focus left
