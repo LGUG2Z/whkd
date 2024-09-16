@@ -61,7 +61,9 @@ pub fn parser() -> impl Parser<char, Whkdrc, Error = Simple<char>> {
     let binding = hotkeys.then_ignore(delimiter).then(command);
     let process_bindings = hotkeys.then(process_command_map);
 
-    shell
+    comment
+        .repeated()
+        .ignore_then(shell)
         .then(
             process_bindings
                 .map(|(keys, apps_commands)| {
@@ -125,6 +127,28 @@ alt + h : echo "Hello""#;
         assert_eq!(output.unwrap(), expected);
     }
 
+    #[test]
+    fn test_starts_with_comment_single_line_parser() {
+        let src = r#"
+# sample comment
+.shell pwsh # can be one of cmd | pwsh | powershell
+
+alt + h : echo "Hello""#;
+
+        let output = parser().parse(src);
+        let expected = Whkdrc {
+            shell: Shell::Pwsh,
+            app_bindings: vec![],
+            bindings: vec![HotkeyBinding {
+                keys: vec![String::from("alt"), String::from("h")],
+                command: String::from("echo \"Hello\""),
+                process_name: None,
+            }],
+        };
+
+        assert_eq!(output.unwrap(), expected);
+    }
+    
     #[test]
     fn test_parse() {
         let src = r#"
