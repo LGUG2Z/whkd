@@ -148,7 +148,7 @@ alt + h : echo "Hello""#;
 
         assert_eq!(output.unwrap(), expected);
     }
-    
+
     #[test]
     fn test_parse() {
         let src = r#"
