@@ -69,6 +69,7 @@ jobs:
     needs: build
     runs-on: windows-latest
     permissions: write-all
+    if: ${{ github.ref == 'refs/heads/master' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -96,7 +97,7 @@ jobs:
         run: |
           if ! type kokai >/dev/null; then cargo install --locked kokai --force; fi
           git tag -d nightly || true
-          kokai release --no-emoji --add-links github:commits,issues --ref "$(git tag --points-at HEAD)" >"CHANGELOG.md"
+          kokai release --no-emoji --add-links github:commits,issues --ref "${{ github.ref_name }}" >"CHANGELOG.md"
       - uses: softprops/action-gh-release@v2
         with:
           body_path: "CHANGELOG.md"
