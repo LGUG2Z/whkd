@@ -148,7 +148,7 @@ jobs:
             *.zip
             *.msi
       - if: startsWith(github.ref, 'refs/tags/v')
-        uses: vedantmgoyal2009/winget-releaser@v2
+        uses: vedantmgoyal2009/winget-releaser@main
         with:
           identifier: LGUG2Z.whkd
           token: ${{ secrets.WINGET_TOKEN }}
