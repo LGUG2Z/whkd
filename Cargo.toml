@@ -1,7 +1,6 @@
 [package]
 name = "whkd"
 version = "0.2.3"
-authors = ["Jade Iqbal <jadeiqbal@fastmail.com>"]
 description = "A simple hotkey daemon for Windows"
 categories = ["hotkey-daemon", "windows"]
 repository = "https://github.com/LGUG2Z/whkd"
@@ -18,4 +17,4 @@ color-eyre = "0.6"
 dirs = "5"
 lazy_static = "1"
 parking_lot = "0.12"
-windows-hotkeys = "0.2.1"
+win-hotkeys = "0.3"
