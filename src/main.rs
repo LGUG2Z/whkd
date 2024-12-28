@@ -15,11 +15,10 @@ use std::path::PathBuf;
 use std::process::ChildStdin;
 use std::process::Command;
 use std::process::Stdio;
-use windows_hotkeys::error::HkError;
-use windows_hotkeys::keys::ModKey;
-use windows_hotkeys::keys::VKey;
-use windows_hotkeys::HotkeyManager;
-use windows_hotkeys::HotkeyManagerImpl;
+use win_hotkeys::error::WHKError;
+use win_hotkeys::keys::ModKey;
+use win_hotkeys::keys::VKey;
+use win_hotkeys::HotkeyManager;
 
 mod parser;
 mod whkdrc;
@@ -59,7 +58,7 @@ impl HkmData {
     pub fn register(&self, hkm: &mut HotkeyManager<()>, shell: Shell) -> Result<()> {
         let cmd = self.command.clone();
 
-        if let Err(error) = hkm.register(self.vkey, self.mod_keys.as_slice(), move || {
+        if let Err(error) = hkm.register_hotkey(self.vkey, self.mod_keys.as_slice(), move || {
             if let Some(session_stdin) = SESSION_STDIN.lock().as_mut() {
                 if matches!(shell, Shell::Pwsh | Shell::Powershell) {
                     println!("{cmd}");
@@ -79,7 +78,7 @@ impl HkmData {
 }
 
 impl TryFrom<&HotkeyBinding> for HkmData {
-    type Error = HkError;
+    type Error = WHKError;
 
     fn try_from(value: &HotkeyBinding) -> Result<Self, Self::Error> {
         let (trigger, mods) = value.keys.split_last().unwrap();
@@ -156,7 +155,6 @@ fn main() -> Result<()> {
     }
 
     let mut hkm = HotkeyManager::new();
-    hkm.set_no_repeat(false);
 
     let mut mapped = HashMap::new();
     for (keys, app_bindings) in &whkdrc.app_bindings {
@@ -174,7 +172,7 @@ fn main() -> Result<()> {
         let mod_keys = v[0].mod_keys.as_slice();
 
         let v = v.clone();
-        hkm.register(vkey, mod_keys, move || {
+        hkm.register_hotkey(vkey, mod_keys, move || {
             if let Some(session_stdin) = SESSION_STDIN.lock().as_mut() {
                 for e in &v {
                     let cmd = &e.command;
