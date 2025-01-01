@@ -4,9 +4,9 @@ version = 4
 
 [[package]]
 name = "active-win-pos-rs"
-version = "0.8.4"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e227f8493de9f5e493f8e762ac7516d2ae42464df2e8122fcafd604f0b16c634"
+checksum = "3b37fd8a23464e913e3fcc1ff2d347c06d77f9101ee680c42b32d020508dc834"
 dependencies = [
  "appkit-nsworkspace-bindings",
  "core-foundation",
@@ -439,9 +439,9 @@ checksum = "4271d37baee1b8c7e4b708028c57d816cf9d2434acb33a549475f78c181f6253"
 
 [[package]]
 name = "glob"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
+checksum = "a8d1add55171497b4705a648c6b583acafb01d58050a51727785f0b2c8e0a2b2"
 
 [[package]]
 name = "hashbrown"
@@ -819,9 +819,9 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "syn"
-version = "2.0.92"
+version = "2.0.93"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70ae51629bf965c5c098cc9e87908a3df5301051a9e087d6f9bef5c9771ed126"
+checksum = "9c786062daee0d6db1132800e623df74274a0a87322d8e183338e01b3d98d058"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -963,7 +963,7 @@ dependencies = [
 
 [[package]]
 name = "whkd"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "active-win-pos-rs",
  "chumsky",
