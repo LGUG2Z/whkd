@@ -27,7 +27,7 @@ pub fn parser() -> impl Parser<char, Whkdrc, Error = Simple<char>> {
     let hotkeys = choice((text::ident(), text::int(10)))
         .padded()
         .separated_by(just("+"))
-        .at_least(2)
+        .at_least(1)
         .collect::<Vec<String>>();
 
     let delimiter = just(":").padded();
@@ -223,6 +223,28 @@ alt + 1 : komorebic focus-workspace 0 # digits are fine in the hotkeys section
                     process_name: None,
                 },
             ],
+        };
+
+        assert_eq!(output.unwrap(), expected);
+    }
+
+    #[test]
+    fn test_binding_without_modkeys() {
+        let src = r#"
+# sample comment
+.shell pwsh # can be one of cmd | pwsh | powershell
+
+f11 : echo "hello f11""#;
+
+        let output = parser().parse(src);
+        let expected = Whkdrc {
+            shell: Shell::Pwsh,
+            app_bindings: vec![],
+            bindings: vec![HotkeyBinding {
+                keys: vec![String::from("f11")],
+                command: String::from("echo \"hello f11\""),
+                process_name: None,
+            }],
         };
 
         assert_eq!(output.unwrap(), expected);

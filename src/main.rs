@@ -81,12 +81,19 @@ impl TryFrom<&HotkeyBinding> for HkmData {
     type Error = WHKError;
 
     fn try_from(value: &HotkeyBinding) -> Result<Self, Self::Error> {
-        let (trigger, mods) = value.keys.split_last().unwrap();
         let mut mod_keys = vec![];
-        let vkey = VKey::from_keyname(trigger)?;
-        for m in mods {
-            mod_keys.push(ModKey::from_keyname(m)?);
-        }
+
+        let (mod_keys, vkey) = if value.keys.len() == 1 {
+            (vec![], VKey::from_keyname(&value.keys[0])?)
+        } else {
+            let (trigger, mods) = value.keys.split_last().unwrap();
+            let vkey = VKey::from_keyname(trigger)?;
+            for m in mods {
+                mod_keys.push(ModKey::from_keyname(m)?);
+            }
+
+            (mod_keys, vkey)
+        };
 
         Ok(Self {
             mod_keys,
