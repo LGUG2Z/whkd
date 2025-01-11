@@ -963,7 +963,7 @@ dependencies = [
 
 [[package]]
 name = "whkd"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "active-win-pos-rs",
  "chumsky",
@@ -977,9 +977,9 @@ dependencies = [
 
 [[package]]
 name = "win-hotkeys"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e714f1a868a8f0275a0ba8da53f8e7212c9b989186acb1d2b8ffb284bfcfb56"
+checksum = "b15a8aae0a7234346e9b820ea9ed2d07ce756fa40c8e42575eb71809764525ac"
 dependencies = [
  "crossbeam-channel",
  "thiserror 2.0.11",

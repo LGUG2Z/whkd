@@ -16,8 +16,7 @@ use std::process::ChildStdin;
 use std::process::Command;
 use std::process::Stdio;
 use win_hotkeys::error::WHKError;
-use win_hotkeys::keys::ModKey;
-use win_hotkeys::keys::VKey;
+use win_hotkeys::VKey;
 use win_hotkeys::HotkeyManager;
 
 mod parser;
@@ -48,7 +47,7 @@ lazy_static! {
 
 #[derive(Debug, Clone)]
 pub struct HkmData {
-    pub mod_keys: Vec<ModKey>,
+    pub mod_keys: Vec<VKey>,
     pub vkey: VKey,
     pub command: String,
     pub process_name: Option<String>,
@@ -89,7 +88,7 @@ impl TryFrom<&HotkeyBinding> for HkmData {
             let (trigger, mods) = value.keys.split_last().unwrap();
             let vkey = VKey::from_keyname(trigger)?;
             for m in mods {
-                mod_keys.push(ModKey::from_keyname(m)?);
+                mod_keys.push(VKey::from_keyname(m)?);
             }
 
             (mod_keys, vkey)
