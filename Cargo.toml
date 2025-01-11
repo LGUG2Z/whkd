@@ -1,6 +1,6 @@
 [package]
 name = "whkd"
-version = "0.2.5"
+version = "0.2.6"
 description = "A simple hotkey daemon for Windows"
 repository = "https://github.com/LGUG2Z/whkd"
 license = "MIT"
