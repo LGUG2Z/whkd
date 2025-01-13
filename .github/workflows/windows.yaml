@@ -48,7 +48,7 @@ jobs:
           cache-all-crates: "true"
       - run: cargo +nightly fmt --check
       - run: cargo clippy
-      - uses: houseabsolute/actions-rust-cross@v0
+      - uses: houseabsolute/actions-rust-cross@v1
         with:
           command: "build"
           target: ${{ matrix.platform.target }}
