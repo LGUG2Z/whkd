@@ -13,7 +13,7 @@ active-win-pos-rs = "0.9"
 chumsky = "0.9"
 clap = { version = "4", features = ["derive"] }
 color-eyre = "0.6"
-dirs = "5"
+dirs = "6"
 lazy_static = "1"
 parking_lot = "0.12"
 win-hotkeys = "0.4"
