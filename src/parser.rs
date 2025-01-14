@@ -37,15 +37,26 @@ pub fn parser() -> impl Parser<char, Whkdrc, Error = Simple<char>> {
         .map(|c| c.0)
         .collect::<String>();
 
-    let process_name = text::ident()
-        .padded()
-        .repeated()
-        .at_least(1)
-        .map(|a| a.join(" "));
+    let default_keyword = just("Default").padded();
+    let ignore_keyword = just("Ignore").padded();
+
+    let process_name = choice((
+        default_keyword.map(|_| String::from("Default")),
+        text::ident()
+            .padded()
+            .repeated()
+            .at_least(1)
+            .map(|a| a.join(" ")),
+    ));
+
+    let process_command = choice((
+        ignore_keyword.map(|_| String::from("Ignore")),
+        command.clone(),
+    ));
 
     let process_mapping = process_name
         .then_ignore(delimiter)
-        .then(command.clone())
+        .then(process_command)
         .padded()
         .padded_by(comment.repeated())
         .repeated()
@@ -243,6 +254,59 @@ f11 : echo "hello f11""#;
             bindings: vec![HotkeyBinding {
                 keys: vec![String::from("f11")],
                 command: String::from("echo \"hello f11\""),
+                process_name: None,
+            }],
+        };
+
+        assert_eq!(output.unwrap(), expected);
+    }
+
+    #[test]
+    fn test_default_and_scoped_ignores() {
+        let src = r#"
+.shell pwsh
+
+alt + n [
+    Default       : echo "hello world"
+    Firefox       : echo "hello firefox"
+    Google Chrome : echo "hello chrome"
+    Zen Browser   : Ignore
+]
+
+alt + h : echo "Hello""#;
+
+        let output = parser().parse(src);
+        dbg!(&output);
+        let expected = Whkdrc {
+            shell: Shell::Pwsh,
+            app_bindings: vec![(
+                vec![String::from("alt"), String::from("n")],
+                vec![
+                    HotkeyBinding {
+                        keys: vec![String::from("alt"), String::from("n")],
+                        command: String::from(r#"echo "hello world""#),
+                        process_name: Option::from("Default".to_string()),
+                    },
+                    HotkeyBinding {
+                        keys: vec![String::from("alt"), String::from("n")],
+                        command: String::from(r#"echo "hello firefox""#),
+                        process_name: Option::from("Firefox".to_string()),
+                    },
+                    HotkeyBinding {
+                        keys: vec![String::from("alt"), String::from("n")],
+                        command: String::from(r#"echo "hello chrome""#),
+                        process_name: Option::from("Google Chrome".to_string()),
+                    },
+                    HotkeyBinding {
+                        keys: vec![String::from("alt"), String::from("n")],
+                        command: String::from("Ignore"),
+                        process_name: Option::from("Zen Browser".to_string()),
+                    },
+                ],
+            )],
+            bindings: vec![HotkeyBinding {
+                keys: vec![String::from("alt"), String::from("h")],
+                command: String::from(r#"echo "Hello""#),
                 process_name: None,
             }],
         };
