@@ -180,25 +180,36 @@ fn main() -> Result<()> {
         let v = v.clone();
         hkm.register_hotkey(vkey, mod_keys, move || {
             if let Some(session_stdin) = SESSION_STDIN.lock().as_mut() {
+                let app_name = active_win_pos_rs::get_active_window()
+                    .unwrap_or_default()
+                    .app_name;
+
+                let mut matched_cmd = None;
+                let mut default_cmd = None;
+
                 for e in &v {
                     let cmd = &e.command;
-                    if let Some(proc) = &e.process_name {
-                        match active_win_pos_rs::get_active_window() {
-                            Ok(window) => {
-                                if window.app_name == *proc {
-                                    if matches!(whkdrc.shell, Shell::Pwsh | Shell::Powershell) {
-                                        println!("{cmd}");
-                                    }
 
-                                    writeln!(session_stdin, "{cmd}")
-                                        .expect("failed to execute command");
-                                }
-                            }
-                            Err(error) => {
-                                dbg!(error);
-                            }
+                    if let Some(proc) = &e.process_name {
+                        if *proc == "Default" {
+                            default_cmd = Some(cmd.clone());
+                        }
+
+                        if app_name == *proc {
+                            matched_cmd = Some(cmd.clone());
                         }
                     }
+                }
+
+                match (matched_cmd, default_cmd) {
+                    (None, Some(cmd)) | (Some(cmd), _) if cmd != "Ignore" => {
+                        if matches!(whkdrc.shell, Shell::Pwsh | Shell::Powershell) {
+                            println!("{cmd}");
+                        }
+
+                        writeln!(session_stdin, "{cmd}").expect("failed to execute command");
+                    }
+                    (_, _) => {}
                 }
             }
         })?;

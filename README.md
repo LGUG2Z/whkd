@@ -16,6 +16,7 @@ The format of the configuration file (and this project itself) is heavily inspir
 .shell pwsh # can be one of cmd | pwsh | powershell
 
 # Specify different behaviour depending on the app
+# These "app : command" style bindings MUST come immediately below the .shell directive
 alt + n [
     # ProcessName as shown by `Get-Process`
     Firefox       : echo "hello firefox"
@@ -24,11 +25,14 @@ alt + n [
     Google Chrome : echo "hello chrome"
 ]
 
-# reload configuration
-alt + o : taskkill /f /im whkd.exe && Start-Process whkd -WindowStyle hidden
+alt + q [
+    # Default is a keyword which will apply to all apps
+    # If you only have Default, this is the same as doing "alt + q : komorebic close"
+    Default       : komorebic close
 
-# app shortcuts
-alt + f : if ($wshell.AppActivate('Firefox') -eq $False) { start firefox }
+    # Ignore is a keyword which will skip running the hotkey for the given process
+    Google Chrome : Ignore
+]
 
 # focus windows with komorebi
 alt + h : komorebic focus left
