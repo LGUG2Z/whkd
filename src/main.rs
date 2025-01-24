@@ -58,12 +58,28 @@ impl HkmData {
         let cmd = self.command.clone();
 
         if let Err(error) = hkm.register_hotkey(self.vkey, self.mod_keys.as_slice(), move || {
+            let mut retry_with_new_session = false;
+
             if let Some(session_stdin) = SESSION_STDIN.lock().as_mut() {
                 if matches!(shell, Shell::Pwsh | Shell::Powershell) {
                     println!("{cmd}");
                 }
 
-                writeln!(session_stdin, "{cmd}").expect("failed to execute command");
+                if writeln!(session_stdin, "{cmd}").is_err() {
+                    retry_with_new_session = true;
+                }
+            }
+
+            if retry_with_new_session && spawn_shell(shell).is_ok() {
+                if let Some(session_stdin) = SESSION_STDIN.lock().as_mut() {
+                    if matches!(shell, Shell::Pwsh | Shell::Powershell) {
+                        println!("{cmd}");
+                    }
+
+                    if writeln!(session_stdin, "{cmd}").is_err() {
+                        eprintln!("Unable to write to stdin session");
+                    }
+                }
             }
         }) {
             eprintln!(
@@ -111,21 +127,10 @@ struct Cli {
     config: Option<PathBuf>,
 }
 
-fn main() -> Result<()> {
-    color_eyre::install()?;
-    let cli = Cli::parse();
+fn spawn_shell(shell: Shell) -> Result<()> {
+    let shell_binary = shell.to_string();
 
-    let whkdrc = cli.config.map_or_else(
-        || WHKDRC.clone(),
-        |config| {
-            Whkdrc::load(&config)
-                .unwrap_or_else(|_| panic!("could not load whkdrc from {config:?}"))
-        },
-    );
-
-    let shell_binary = whkdrc.shell.to_string();
-
-    match whkdrc.shell {
+    match shell {
         Shell::Powershell | Shell::Pwsh => {
             let mut process = Command::new(&shell_binary)
                 .stdin(Stdio::piped())
@@ -160,6 +165,23 @@ fn main() -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+fn main() -> Result<()> {
+    color_eyre::install()?;
+    let cli = Cli::parse();
+
+    let whkdrc = cli.config.map_or_else(
+        || WHKDRC.clone(),
+        |config| {
+            Whkdrc::load(&config)
+                .unwrap_or_else(|_| panic!("could not load whkdrc from {config:?}"))
+        },
+    );
+
+    spawn_shell(whkdrc.shell)?;
+
     let mut hkm = HotkeyManager::new();
 
     let mut mapped = HashMap::new();
@@ -179,6 +201,8 @@ fn main() -> Result<()> {
 
         let v = v.clone();
         hkm.register_hotkey(vkey, mod_keys, move || {
+            let mut retry_with_new_session = false;
+
             if let Some(session_stdin) = SESSION_STDIN.lock().as_mut() {
                 let app_name = active_win_pos_rs::get_active_window()
                     .unwrap_or_default()
@@ -207,9 +231,49 @@ fn main() -> Result<()> {
                             println!("{cmd}");
                         }
 
-                        writeln!(session_stdin, "{cmd}").expect("failed to execute command");
+                        if writeln!(session_stdin, "{cmd}").is_err() {
+                            retry_with_new_session = true;
+                        }
                     }
                     (_, _) => {}
+                }
+            }
+
+            if retry_with_new_session && spawn_shell(whkdrc.shell).is_ok() {
+                if let Some(session_stdin) = SESSION_STDIN.lock().as_mut() {
+                    let app_name = active_win_pos_rs::get_active_window()
+                        .unwrap_or_default()
+                        .app_name;
+
+                    let mut matched_cmd = None;
+                    let mut default_cmd = None;
+
+                    for e in &v {
+                        let cmd = &e.command;
+
+                        if let Some(proc) = &e.process_name {
+                            if *proc == "Default" {
+                                default_cmd = Some(cmd.clone());
+                            }
+
+                            if app_name == *proc {
+                                matched_cmd = Some(cmd.clone());
+                            }
+                        }
+                    }
+
+                    match (matched_cmd, default_cmd) {
+                        (None, Some(cmd)) | (Some(cmd), _) if cmd != "Ignore" => {
+                            if matches!(whkdrc.shell, Shell::Pwsh | Shell::Powershell) {
+                                println!("{cmd}");
+                            }
+
+                            if writeln!(session_stdin, "{cmd}").is_err() {
+                                eprintln!("Unable to write to stdin session");
+                            }
+                        }
+                        (_, _) => {}
+                    }
                 }
             }
         })?;
