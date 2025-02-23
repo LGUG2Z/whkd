@@ -24,6 +24,17 @@ pub fn parser() -> impl Parser<char, Whkdrc, Error = Simple<char>> {
         .collect::<String>()
         .map(Shell::from);
 
+    let pause = just(".pause")
+        .padded()
+        .ignore_then(
+            choice((text::ident(), text::int(10)))
+                .padded()
+                .separated_by(just("+"))
+                .at_least(1)
+                .collect::<Vec<String>>(),
+        )
+        .or_not();
+
     let hotkeys = choice((text::ident(), text::int(10)))
         .padded()
         .separated_by(just("+"))
@@ -75,6 +86,7 @@ pub fn parser() -> impl Parser<char, Whkdrc, Error = Simple<char>> {
     comment
         .repeated()
         .ignore_then(shell)
+        .then(pause)
         .then(
             process_bindings
                 .map(|(keys, apps_commands)| {
@@ -106,10 +118,11 @@ pub fn parser() -> impl Parser<char, Whkdrc, Error = Simple<char>> {
                 .repeated()
                 .at_least(1),
         )
-        .map(|((shell, app_bindings), bindings)| Whkdrc {
+        .map(|(((shell, pause), app_bindings), bindings)| Whkdrc {
             shell,
             app_bindings,
             bindings,
+            pause,
         })
 }
 
@@ -133,6 +146,7 @@ alt + h : echo "Hello""#;
                 command: String::from("echo \"Hello\""),
                 process_name: None,
             }],
+            pause: None,
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -155,6 +169,7 @@ alt + h : echo "Hello""#;
                 command: String::from("echo \"Hello\""),
                 process_name: None,
             }],
+            pause: None,
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -234,6 +249,7 @@ alt + 1 : komorebic focus-workspace 0 # digits are fine in the hotkeys section
                     process_name: None,
                 },
             ],
+            pause: None,
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -256,6 +272,7 @@ f11 : echo "hello f11""#;
                 command: String::from("echo \"hello f11\""),
                 process_name: None,
             }],
+            pause: None,
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -276,7 +293,6 @@ alt + n [
 alt + h : echo "Hello""#;
 
         let output = parser().parse(src);
-        dbg!(&output);
         let expected = Whkdrc {
             shell: Shell::Pwsh,
             app_bindings: vec![(
@@ -309,6 +325,34 @@ alt + h : echo "Hello""#;
                 command: String::from(r#"echo "Hello""#),
                 process_name: None,
             }],
+            pause: None,
+        };
+
+        assert_eq!(output.unwrap(), expected);
+    }
+
+    #[test]
+    fn test_pause_hotkey() {
+        let src = r#"
+.shell pwsh
+.pause ctrl + shift + esc
+
+alt + h : echo "Hello""#;
+
+        let output = parser().parse(src);
+        let expected = Whkdrc {
+            shell: Shell::Pwsh,
+            app_bindings: vec![],
+            bindings: vec![HotkeyBinding {
+                keys: vec![String::from("alt"), String::from("h")],
+                command: String::from(r#"echo "Hello""#),
+                process_name: None,
+            }],
+            pause: Some(vec![
+                "ctrl".to_string(),
+                "shift".to_string(),
+                "esc".to_string(),
+            ]),
         };
 
         assert_eq!(output.unwrap(), expected);

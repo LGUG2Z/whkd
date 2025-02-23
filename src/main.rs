@@ -173,6 +173,7 @@ fn spawn_shell(shell: Shell) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)]
 fn main() -> Result<()> {
     color_eyre::install()?;
     let cli = Cli::parse();
@@ -188,6 +189,37 @@ fn main() -> Result<()> {
     spawn_shell(whkdrc.shell)?;
 
     let mut hkm = HotkeyManager::new();
+    let pause_handle = hkm.pause_handle();
+
+    if let Some(keys) = whkdrc.pause {
+        let mut mod_keys = vec![];
+
+        let (mod_keys, vkey) = if keys.len() == 1 {
+            (vec![], VKey::from_keyname(&keys[0])?)
+        } else {
+            let (trigger, mods) = keys.split_last().unwrap();
+            let vkey = VKey::from_keyname(trigger)?;
+            for m in mods {
+                mod_keys.push(VKey::from_keyname(m)?);
+            }
+
+            (mod_keys, vkey)
+        };
+
+        if let Err(error) = hkm.register_pause_hotkey(vkey, mod_keys.as_slice(), move || {
+            let current_state = if pause_handle.is_paused() {
+                "paused"
+            } else {
+                "running"
+            };
+
+            println!("whkd is now {current_state}");
+        }) {
+            eprintln!(
+                "Unable to register pause hotkey '{mod_keys:?} + {vkey}' (error: {error}), ignoring this binding and continuing...",
+            );
+        }
+    }
 
     let mut mapped = HashMap::new();
     for (keys, app_bindings) in &whkdrc.app_bindings {
