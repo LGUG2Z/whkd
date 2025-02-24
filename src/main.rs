@@ -191,7 +191,7 @@ fn main() -> Result<()> {
     let mut hkm = HotkeyManager::new();
     let pause_handle = hkm.pause_handle();
 
-    if let Some(keys) = whkdrc.pause {
+    if let Some(keys) = whkdrc.pause_binding {
         let mut mod_keys = vec![];
 
         let (mod_keys, vkey) = if keys.len() == 1 {
@@ -214,6 +214,31 @@ fn main() -> Result<()> {
             };
 
             println!("whkd is now {current_state}");
+
+            if let Some(cmd) = &whkdrc.pause_hook {
+                let mut retry_with_new_session = false;
+                if let Some(session_stdin) = SESSION_STDIN.lock().as_mut() {
+                    if matches!(whkdrc.shell, Shell::Pwsh | Shell::Powershell) {
+                        println!("{cmd}");
+                    }
+
+                    if writeln!(session_stdin, "{cmd}").is_err() {
+                        retry_with_new_session = true;
+                    }
+                }
+
+                if retry_with_new_session && spawn_shell(whkdrc.shell).is_ok() {
+                    if let Some(session_stdin) = SESSION_STDIN.lock().as_mut() {
+                        if matches!(whkdrc.shell, Shell::Pwsh | Shell::Powershell) {
+                            println!("{cmd}");
+                        }
+
+                        if writeln!(session_stdin, "{cmd}").is_err() {
+                            eprintln!("Unable to write to stdin session");
+                        }
+                    }
+                }
+            }
         }) {
             eprintln!(
                 "Unable to register pause hotkey '{mod_keys:?} + {vkey}' (error: {error}), ignoring this binding and continuing...",

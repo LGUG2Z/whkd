@@ -9,6 +9,7 @@ pub struct HotkeyBinding {
     pub process_name: Option<String>,
 }
 
+#[allow(clippy::too_many_lines)]
 #[must_use]
 pub fn parser() -> impl Parser<char, Whkdrc, Error = Simple<char>> {
     let comment = just::<_, _, Simple<char>>("#")
@@ -24,29 +25,30 @@ pub fn parser() -> impl Parser<char, Whkdrc, Error = Simple<char>> {
         .collect::<String>()
         .map(Shell::from);
 
-    let pause = just(".pause")
-        .padded()
-        .ignore_then(
-            choice((text::ident(), text::int(10)))
-                .padded()
-                .separated_by(just("+"))
-                .at_least(1)
-                .collect::<Vec<String>>(),
-        )
-        .or_not();
-
     let hotkeys = choice((text::ident(), text::int(10)))
         .padded()
         .separated_by(just("+"))
         .at_least(1)
         .collect::<Vec<String>>();
 
-    let delimiter = just(":").padded();
-
     let command = take_until(choice((comment, text::newline(), end())))
         .padded()
         .map(|c| c.0)
         .collect::<String>();
+
+    let pause = just(".pause")
+        .padded()
+        .ignore_then(hotkeys)
+        .padded_by(comment.repeated())
+        .or_not();
+
+    let pause_hook = just(".pause_hook")
+        .padded()
+        .ignore_then(command.clone())
+        .padded_by(comment.repeated())
+        .or_not();
+
+    let delimiter = just(":").padded();
 
     let default_keyword = just("Default").padded();
     let ignore_keyword = just("Ignore").padded();
@@ -87,6 +89,7 @@ pub fn parser() -> impl Parser<char, Whkdrc, Error = Simple<char>> {
         .repeated()
         .ignore_then(shell)
         .then(pause)
+        .then(pause_hook)
         .then(
             process_bindings
                 .map(|(keys, apps_commands)| {
@@ -118,12 +121,15 @@ pub fn parser() -> impl Parser<char, Whkdrc, Error = Simple<char>> {
                 .repeated()
                 .at_least(1),
         )
-        .map(|(((shell, pause), app_bindings), bindings)| Whkdrc {
-            shell,
-            app_bindings,
-            bindings,
-            pause,
-        })
+        .map(
+            |((((shell, pause_binding), pause_hook), app_bindings), bindings)| Whkdrc {
+                shell,
+                app_bindings,
+                bindings,
+                pause_binding,
+                pause_hook,
+            },
+        )
 }
 
 #[cfg(test)]
@@ -146,7 +152,8 @@ alt + h : echo "Hello""#;
                 command: String::from("echo \"Hello\""),
                 process_name: None,
             }],
-            pause: None,
+            pause_binding: None,
+            pause_hook: None,
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -169,7 +176,8 @@ alt + h : echo "Hello""#;
                 command: String::from("echo \"Hello\""),
                 process_name: None,
             }],
-            pause: None,
+            pause_binding: None,
+            pause_hook: None,
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -249,7 +257,8 @@ alt + 1 : komorebic focus-workspace 0 # digits are fine in the hotkeys section
                     process_name: None,
                 },
             ],
-            pause: None,
+            pause_binding: None,
+            pause_hook: None,
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -272,7 +281,8 @@ f11 : echo "hello f11""#;
                 command: String::from("echo \"hello f11\""),
                 process_name: None,
             }],
-            pause: None,
+            pause_binding: None,
+            pause_hook: None,
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -325,7 +335,8 @@ alt + h : echo "Hello""#;
                 command: String::from(r#"echo "Hello""#),
                 process_name: None,
             }],
-            pause: None,
+            pause_binding: None,
+            pause_hook: None,
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -348,11 +359,70 @@ alt + h : echo "Hello""#;
                 command: String::from(r#"echo "Hello""#),
                 process_name: None,
             }],
-            pause: Some(vec![
+            pause_binding: Some(vec![
                 "ctrl".to_string(),
                 "shift".to_string(),
                 "esc".to_string(),
             ]),
+            pause_hook: None,
+        };
+
+        assert_eq!(output.unwrap(), expected);
+    }
+
+    #[test]
+    fn test_pause_hook() {
+        let src = r#"
+.shell pwsh
+.pause ctrl + shift + esc
+.pause_hook komorebic toggle-pause
+
+alt + h : echo "Hello""#;
+
+        let output = parser().parse(src);
+        let expected = Whkdrc {
+            shell: Shell::Pwsh,
+            app_bindings: vec![],
+            bindings: vec![HotkeyBinding {
+                keys: vec![String::from("alt"), String::from("h")],
+                command: String::from(r#"echo "Hello""#),
+                process_name: None,
+            }],
+            pause_binding: Some(vec![
+                "ctrl".to_string(),
+                "shift".to_string(),
+                "esc".to_string(),
+            ]),
+            pause_hook: Some("komorebic toggle-pause".to_string()),
+        };
+
+        assert_eq!(output.unwrap(), expected);
+    }
+
+    #[test]
+    fn test_pause_hook_with_comments() {
+        let src = r#"
+.shell pwsh                            # can be one of cmd | pwsh | powershell
+.pause alt + shift + p                 # can be any hotkey combo to toggle all other hotkeys on and off
+.pause_hook komorebic toggle-pause     # another comment
+
+alt + h : echo "Hello""#;
+
+        let output = parser().parse(src);
+        let expected = Whkdrc {
+            shell: Shell::Pwsh,
+            app_bindings: vec![],
+            bindings: vec![HotkeyBinding {
+                keys: vec![String::from("alt"), String::from("h")],
+                command: String::from(r#"echo "Hello""#),
+                process_name: None,
+            }],
+            pause_binding: Some(vec![
+                "alt".to_string(),
+                "shift".to_string(),
+                "p".to_string(),
+            ]),
+            pause_hook: Some("komorebic toggle-pause".to_string()),
         };
 
         assert_eq!(output.unwrap(), expected);

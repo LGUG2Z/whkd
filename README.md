@@ -16,6 +16,7 @@ The format of the configuration file (and this project itself) is heavily inspir
 ```
 .shell pwsh # can be one of cmd | pwsh | powershell
 .pause alt + shift + p # can be any hotkey combo to toggle all other hotkeys on and off
+.pause_hook echo "you can call whatever powershell command you want here"
 
 # Specify different behaviour depending on the app
 # These "app : command" style bindings MUST come immediately below the .shell directive

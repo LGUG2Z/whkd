@@ -12,7 +12,8 @@ pub struct Whkdrc {
     pub shell: Shell,
     pub app_bindings: Vec<(Vec<String>, Vec<HotkeyBinding>)>,
     pub bindings: Vec<HotkeyBinding>,
-    pub pause: Option<Vec<String>>,
+    pub pause_binding: Option<Vec<String>>,
+    pub pause_hook: Option<String>,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
