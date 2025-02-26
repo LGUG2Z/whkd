@@ -3,7 +3,6 @@ name = "whkd"
 version = "0.2.7"
 description = "A simple hotkey daemon for Windows"
 repository = "https://github.com/LGUG2Z/whkd"
-license = "MIT"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

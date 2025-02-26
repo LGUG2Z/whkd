@@ -63,7 +63,7 @@
         Id='*'
         Name='whkd'
         UpgradeCode='0E5D0A9F-3AEC-41B7-A580-095B9C29ABD6'
-        Manufacturer='Jade Iqbal'
+        Manufacturer='LGUG2Z'
         Language='1033'
         Codepage='1252'
         Version='$(var.Version)'>
@@ -71,7 +71,7 @@
         <Package Id='*'
             Keywords='Installer'
             Description='A simple hotkey daemon for Windows'
-            Manufacturer='Jade Iqbal'
+            Manufacturer='LGUG2Z'
             InstallerVersion='500'
             Languages='1033'
             Compressed='yes'
