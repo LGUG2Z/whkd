@@ -1,14 +1,14 @@
 #![warn(clippy::all)]
 #![allow(clippy::missing_errors_doc, clippy::redundant_pub_crate)]
 
-use crate::parser::HotkeyBinding;
-use crate::whkdrc::Shell;
-use crate::whkdrc::Whkdrc;
+mod parser;
+
 use clap::Parser;
 use color_eyre::eyre::eyre;
 use color_eyre::eyre::Result;
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
+use parser::parser;
 use std::collections::HashMap;
 use std::io::Write;
 use std::os::windows::process::CommandExt;
@@ -16,12 +16,12 @@ use std::path::PathBuf;
 use std::process::ChildStdin;
 use std::process::Command;
 use std::process::Stdio;
+use whkd_core::HotkeyBinding;
+use whkd_core::Shell;
+use whkd_core::Whkdrc;
 use win_hotkeys::error::WHKError;
 use win_hotkeys::HotkeyManager;
 use win_hotkeys::VKey;
-
-mod parser;
-mod whkdrc;
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
@@ -43,7 +43,7 @@ lazy_static! {
             },
         );
         home.push("whkdrc");
-        Whkdrc::load(&home).unwrap_or_else(|_| panic!("could not load whkdrc from {home:?}"))
+        load(&home).unwrap_or_else(|_| panic!("could not load whkdrc from {home:?}"))
     };
     static ref SESSION_STDIN: Mutex<Option<ChildStdin>> = Mutex::new(None);
 }
@@ -173,6 +173,16 @@ fn spawn_shell(shell: Shell) -> Result<()> {
     Ok(())
 }
 
+fn load(path: &PathBuf) -> Result<Whkdrc> {
+    use chumsky::Parser;
+
+    let contents = std::fs::read_to_string(path)?;
+
+    parser()
+        .parse(contents)
+        .map_err(|error| eyre!("could not parse whkdrc: {:?}", error))
+}
+
 #[allow(clippy::too_many_lines)]
 fn main() -> Result<()> {
     color_eyre::install()?;
@@ -180,10 +190,7 @@ fn main() -> Result<()> {
 
     let whkdrc = cli.config.map_or_else(
         || WHKDRC.clone(),
-        |config| {
-            Whkdrc::load(&config)
-                .unwrap_or_else(|_| panic!("could not load whkdrc from {config:?}"))
-        },
+        |config| load(&config).unwrap_or_else(|_| panic!("could not load whkdrc from {config:?}")),
     );
 
     spawn_shell(whkdrc.shell)?;

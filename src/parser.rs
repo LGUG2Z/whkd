@@ -1,13 +1,7 @@
-use crate::whkdrc::Shell;
-use crate::whkdrc::Whkdrc;
+use whkd_core::Shell;
+use whkd_core::Whkdrc;
+use whkd_core::HotkeyBinding;
 use chumsky::prelude::*;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HotkeyBinding {
-    pub keys: Vec<String>,
-    pub command: String,
-    pub process_name: Option<String>,
-}
 
 #[allow(clippy::too_many_lines)]
 #[must_use]

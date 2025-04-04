@@ -953,8 +953,13 @@ dependencies = [
  "dirs",
  "lazy_static",
  "parking_lot",
+ "whkd_core",
  "win-hotkeys",
 ]
+
+[[package]]
+name = "whkd_core"
+version = "0.2.7"
 
 [[package]]
 name = "win-hotkeys"
