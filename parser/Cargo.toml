@@ -1,7 +1,9 @@
 [package]
 name = "whkd_parser"
+description = "A parser for whkd"
 version.workspace = true
-edition = "2021"
+repository.workspace = true
+edition.workspace = true
 
 [dependencies]
 whkd_core.workspace = true
