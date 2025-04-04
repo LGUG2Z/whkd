@@ -1,11 +1,5 @@
-use crate::parser::parser;
-use crate::parser::HotkeyBinding;
-use chumsky::Parser;
-use color_eyre::eyre::eyre;
-use color_eyre::eyre::Result;
 use std::fmt::Display;
 use std::fmt::Formatter;
-use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Whkdrc {
@@ -45,12 +39,9 @@ impl Display for Shell {
     }
 }
 
-impl Whkdrc {
-    pub fn load(path: &PathBuf) -> Result<Self> {
-        let contents = std::fs::read_to_string(path)?;
-
-        parser()
-            .parse(contents)
-            .map_err(|error| eyre!("could not parse whkdrc: {:?}", error))
-    }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HotkeyBinding {
+    pub keys: Vec<String>,
+    pub command: String,
+    pub process_name: Option<String>,
 }

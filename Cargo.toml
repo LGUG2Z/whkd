@@ -1,13 +1,20 @@
 [package]
 name = "whkd"
-version = "0.2.7"
+version.workspace = true
 description = "A simple hotkey daemon for Windows"
 repository = "https://github.com/LGUG2Z/whkd"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[workspace]
+members = ["core"]
+
+[workspace.package]
+version = "0.2.7"
+
 [dependencies]
+whkd_core = { version = "0.2.7", path = "core" }
 active-win-pos-rs = "0.9"
 chumsky = "0.9"
 clap = { version = "4", features = ["derive"] }
