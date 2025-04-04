@@ -1,4 +1,6 @@
 [package]
 name = "whkd_core"
+description = "The core data for whkd"
 version.workspace = true
-edition = "2021"
+repository.workspace = true
+edition.workspace = true
