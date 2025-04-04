@@ -1,0 +1,4 @@
+[package]
+name = "whkd_core"
+version.workspace = true
+edition = "2021"
