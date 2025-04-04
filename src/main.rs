@@ -1,14 +1,11 @@
 #![warn(clippy::all)]
 #![allow(clippy::missing_errors_doc, clippy::redundant_pub_crate)]
 
-mod parser;
-
 use clap::Parser;
 use color_eyre::eyre::eyre;
 use color_eyre::eyre::Result;
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
-use parser::parser;
 use std::collections::HashMap;
 use std::io::Write;
 use std::os::windows::process::CommandExt;
@@ -19,6 +16,7 @@ use std::process::Stdio;
 use whkd_core::HotkeyBinding;
 use whkd_core::Shell;
 use whkd_core::Whkdrc;
+use whkd_parser::parser;
 use win_hotkeys::error::WHKError;
 use win_hotkeys::HotkeyManager;
 use win_hotkeys::VKey;

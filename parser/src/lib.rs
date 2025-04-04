@@ -1,7 +1,7 @@
+use chumsky::prelude::*;
+use whkd_core::HotkeyBinding;
 use whkd_core::Shell;
 use whkd_core::Whkdrc;
-use whkd_core::HotkeyBinding;
-use chumsky::prelude::*;
 
 #[allow(clippy::too_many_lines)]
 #[must_use]
