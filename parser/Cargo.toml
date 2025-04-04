@@ -1,0 +1,8 @@
+[package]
+name = "whkd_parser"
+version.workspace = true
+edition = "2021"
+
+[dependencies]
+whkd_core.workspace = true
+chumsky.workspace = true

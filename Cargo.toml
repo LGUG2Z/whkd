@@ -8,13 +8,14 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [workspace]
-members = ["core"]
+members = ["core", "parser"]
 
 [workspace.package]
 version = "0.2.7"
 
-[dependencies]
+[workspace.dependencies]
 whkd_core = { version = "0.2.7", path = "core" }
+whkd_parser = { version = "0.2.7", path = "parser" }
 active-win-pos-rs = "0.9"
 chumsky = "0.9"
 clap = { version = "4", features = ["derive"] }
@@ -23,3 +24,15 @@ dirs = "6"
 lazy_static = "1"
 parking_lot = "0.12"
 win-hotkeys = "0.5"
+
+[dependencies]
+whkd_core.workspace = true
+whkd_parser.workspace = true
+active-win-pos-rs.workspace = true
+chumsky.workspace = true
+clap.workspace = true
+color-eyre.workspace = true
+dirs.workspace = true
+lazy_static.workspace = true
+parking_lot.workspace = true
+win-hotkeys.workspace = true
