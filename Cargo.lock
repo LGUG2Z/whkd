@@ -954,12 +954,21 @@ dependencies = [
  "lazy_static",
  "parking_lot",
  "whkd_core",
+ "whkd_parser",
  "win-hotkeys",
 ]
 
 [[package]]
 name = "whkd_core"
 version = "0.2.7"
+
+[[package]]
+name = "whkd_parser"
+version = "0.2.7"
+dependencies = [
+ "chumsky",
+ "whkd_core",
+]
 
 [[package]]
 name = "win-hotkeys"
