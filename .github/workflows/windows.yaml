@@ -55,7 +55,7 @@ jobs:
           args: "--locked --release"
       - run: |
           cargo install cargo-wix
-          cargo wix --no-build --nocapture --target ${{ matrix.platform.target }}
+          cargo wix --no-build --nocapture --target ${{ matrix.platform.target }} --package whkd
       - uses: actions/upload-artifact@v4
         with:
           name: whkd-${{ matrix.platform.target }}-${{ github.sha }}
