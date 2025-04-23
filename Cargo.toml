@@ -11,7 +11,7 @@ edition.workspace = true
 members = ["core", "parser"]
 
 [workspace.package]
-version = "0.2.7"
+version = "0.2.8"
 repository = "https://github.com/LGUG2Z/whkd"
 edition = "2021"
 
