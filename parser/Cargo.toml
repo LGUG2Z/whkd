@@ -1,10 +1,11 @@
 [package]
-name = "whkd_parser"
+name = "whkd-parser"
 description = "A parser for whkd"
 version.workspace = true
 repository.workspace = true
 edition.workspace = true
 
 [dependencies]
-whkd_core.workspace = true
+whkd-core.workspace = true
 chumsky.workspace = true
+thiserror = "2"

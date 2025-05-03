@@ -1,7 +1,27 @@
 use chumsky::prelude::*;
+use std::path::PathBuf;
+use thiserror::Error;
 use whkd_core::HotkeyBinding;
 use whkd_core::Shell;
 use whkd_core::Whkdrc;
+
+#[derive(Debug, Error)]
+pub enum WhkdError {
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error("could not load whkdrc from {0}")]
+    Parse(PathBuf),
+}
+
+pub fn load(path: &PathBuf) -> Result<Whkdrc, WhkdError> {
+    use chumsky::Parser;
+
+    let contents = std::fs::read_to_string(path)?;
+
+    parser()
+        .parse(contents)
+        .map_err(|_error| WhkdError::Parse(path.clone()))
+}
 
 #[allow(clippy::too_many_lines)]
 #[must_use]

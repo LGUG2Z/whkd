@@ -1,5 +1,5 @@
 [package]
-name = "whkd_core"
+name = "whkd-core"
 description = "The core data for whkd"
 version.workspace = true
 repository.workspace = true

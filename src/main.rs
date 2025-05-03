@@ -16,7 +16,6 @@ use std::process::Stdio;
 use whkd_core::HotkeyBinding;
 use whkd_core::Shell;
 use whkd_core::Whkdrc;
-use whkd_parser::parser;
 use win_hotkeys::error::WHKError;
 use win_hotkeys::HotkeyManager;
 use win_hotkeys::VKey;
@@ -41,7 +40,7 @@ lazy_static! {
             },
         );
         home.push("whkdrc");
-        load(&home).unwrap_or_else(|_| panic!("could not load whkdrc from {home:?}"))
+        whkd_parser::load(&home).unwrap_or_else(|_| panic!("could not load whkdrc from {home:?}"))
     };
     static ref SESSION_STDIN: Mutex<Option<ChildStdin>> = Mutex::new(None);
 }
@@ -171,16 +170,6 @@ fn spawn_shell(shell: Shell) -> Result<()> {
     Ok(())
 }
 
-fn load(path: &PathBuf) -> Result<Whkdrc> {
-    use chumsky::Parser;
-
-    let contents = std::fs::read_to_string(path)?;
-
-    parser()
-        .parse(contents)
-        .map_err(|error| eyre!("could not parse whkdrc: {:?}", error))
-}
-
 #[allow(clippy::too_many_lines)]
 fn main() -> Result<()> {
     color_eyre::install()?;
@@ -188,7 +177,10 @@ fn main() -> Result<()> {
 
     let whkdrc = cli.config.map_or_else(
         || WHKDRC.clone(),
-        |config| load(&config).unwrap_or_else(|_| panic!("could not load whkdrc from {config:?}")),
+        |config| {
+            whkd_parser::load(&config)
+                .unwrap_or_else(|_| panic!("could not load whkdrc from {config:?}"))
+        },
     );
 
     spawn_shell(whkdrc.shell)?;
