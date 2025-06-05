@@ -10,6 +10,33 @@ pub struct Whkdrc {
     pub pause_hook: Option<String>,
 }
 
+impl Whkdrc {
+    pub fn add_rwin_bindings(&mut self) {
+        let mut rwin_bindings = vec![];
+        for binding in &mut self.bindings {
+            if let Some(i) = binding.keys.iter().position(|key| key == "win") {
+                let mut rwin_binding = binding.clone();
+                rwin_binding.keys[i] = "rwin".to_string();
+                rwin_bindings.push(rwin_binding);
+            }
+        }
+        self.bindings.extend(rwin_bindings);
+
+        let mut rwin_app_bindings = vec![];
+        for binding in &mut self.app_bindings {
+            if let Some(i) = binding.0.iter().position(|key| key == "win") {
+                let mut rwin_binding = binding.clone();
+                rwin_binding.0[i] = "rwin".to_string();
+                for app_binding in &mut rwin_binding.1 {
+                    app_binding.keys[i] = "rwin".to_string();
+                }
+                rwin_app_bindings.push(rwin_binding);
+            }
+        }
+        self.app_bindings.extend(rwin_app_bindings);
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Shell {
     Cmd,
