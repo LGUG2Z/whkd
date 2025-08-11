@@ -4,9 +4,9 @@ version = 4
 
 [[package]]
 name = "active-win-pos-rs"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b37fd8a23464e913e3fcc1ff2d347c06d77f9101ee680c42b32d020508dc834"
+checksum = "b376311b66ae164d60150395ade1b382584d25be0c5ac2d837b8eb2e549ca224"
 dependencies = [
  "appkit-nsworkspace-bindings",
  "core-foundation",
