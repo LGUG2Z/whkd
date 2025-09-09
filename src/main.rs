@@ -8,7 +8,6 @@ use lazy_static::lazy_static;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::io::Write;
-use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use std::process::ChildStdin;
 use std::process::Command;
@@ -19,8 +18,6 @@ use whkd_core::Whkdrc;
 use win_hotkeys::error::WHKError;
 use win_hotkeys::HotkeyManager;
 use win_hotkeys::VKey;
-
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 lazy_static! {
     static ref WHKDRC: Whkdrc = {
@@ -135,7 +132,6 @@ fn spawn_shell(shell: Shell) -> Result<()> {
             let mut process = Command::new(&shell_binary)
                 .stdin(Stdio::piped())
                 .args(["-Command", "-"])
-                .creation_flags(CREATE_NO_WINDOW)
                 .spawn()?;
 
             let mut stdin = process
@@ -152,7 +148,6 @@ fn spawn_shell(shell: Shell) -> Result<()> {
             let mut process = Command::new(&shell_binary)
                 .stdin(Stdio::piped())
                 .args(["-"])
-                .creation_flags(CREATE_NO_WINDOW)
                 .spawn()?;
 
             let mut stdin = process
