@@ -956,7 +956,7 @@ dependencies = [
 
 [[package]]
 name = "whkd"
-version = "0.2.9"
+version = "0.2.10"
 dependencies = [
  "active-win-pos-rs",
  "clap",
@@ -971,11 +971,11 @@ dependencies = [
 
 [[package]]
 name = "whkd-core"
-version = "0.2.9"
+version = "0.2.10"
 
 [[package]]
 name = "whkd-parser"
-version = "0.2.9"
+version = "0.2.10"
 dependencies = [
  "chumsky",
  "thiserror",
