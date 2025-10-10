@@ -43,6 +43,8 @@ alt + j : komorebic focus down
 alt + k : komorebic focus up
 alt + l : komorebic focus right
 ```
+## Valid Hotkeys
+The list of valid hotkeys can be found [here](https://docs.rs/win-hotkeys/latest/win_hotkeys/enum.VKey.html).
 
 ## License
 
