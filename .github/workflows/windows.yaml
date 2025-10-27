@@ -78,7 +78,7 @@ jobs:
         run: |
           TAG=${{ github.ref_name }}
           echo "VERSION=${TAG#v}" >> $GITHUB_ENV
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v6
       - shell: bash
         run: ls -R
       - run: |
@@ -122,7 +122,7 @@ jobs:
         run: |
           TAG=${{ github.ref_name }}
           echo "VERSION=${TAG#v}" >> $GITHUB_ENV
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v6
       - run: |
           Compress-Archive -Force ./whkd-x86_64-pc-windows-msvc-${{ github.sha }}/x86_64-pc-windows-msvc/release/*.exe whkd-$Env:VERSION-x86_64-pc-windows-msvc.zip
           Copy-Item ./whkd-x86_64-pc-windows-msvc-${{ github.sha }}/wix/*x86_64.msi -Destination ./whkd-$Env:VERSION-x86_64.msi
