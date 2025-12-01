@@ -19,7 +19,7 @@ edition = "2021"
 whkd-core = { version = "0.2.8", path = "core" }
 whkd-parser = { version = "0.2.8", path = "parser" }
 active-win-pos-rs = "0.9"
-chumsky = "0.9"
+chumsky = "0.11"
 clap = { version = "4", features = ["derive"] }
 color-eyre = "0.6"
 dirs = "6"
