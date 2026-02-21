@@ -37,7 +37,9 @@ lazy_static! {
             },
         );
         home.push("whkdrc");
-        whkd_parser::load(&home).unwrap_or_else(|_| panic!("could not load whkdrc from {home:?}"))
+        let mut parsed = whkd_parser::load(&home).unwrap_or_else(|_| panic!("could not load whkdrc from {home:?}"));
+        parsed.add_rwin_bindings();
+        parsed
     };
     static ref SESSION_STDIN: Mutex<Option<ChildStdin>> = Mutex::new(None);
 }
@@ -173,8 +175,10 @@ fn main() -> Result<()> {
     let whkdrc = cli.config.map_or_else(
         || WHKDRC.clone(),
         |config| {
-            whkd_parser::load(&config)
-                .unwrap_or_else(|_| panic!("could not load whkdrc from {config:?}"))
+            let mut parsed = whkd_parser::load(&config)
+                .unwrap_or_else(|_| panic!("could not load whkdrc from {config:?}"));
+            parsed.add_rwin_bindings();
+            parsed
         },
     );
 
