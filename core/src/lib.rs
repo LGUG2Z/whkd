@@ -222,6 +222,99 @@ impl Display for MouseInput {
     }
 }
 
+/// The way a swipe moves
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum SwipeDirection {
+    Left,
+    Right,
+    Up,
+    Down,
+}
+
+/// A swipe of three or four fingers on a touchpad, which can trigger a binding like a mouse input
+/// can. Windows does not pass these on to programs, so whkd recognises them itself from the
+/// touchpad's raw input.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum GestureInput {
+    Swipe3Left,
+    Swipe3Right,
+    Swipe3Up,
+    Swipe3Down,
+    Swipe4Left,
+    Swipe4Right,
+    Swipe4Up,
+    Swipe4Down,
+}
+
+impl GestureInput {
+    pub const ALL: [Self; 8] = [
+        Self::Swipe3Left,
+        Self::Swipe3Right,
+        Self::Swipe3Up,
+        Self::Swipe3Down,
+        Self::Swipe4Left,
+        Self::Swipe4Right,
+        Self::Swipe4Up,
+        Self::Swipe4Down,
+    ];
+
+    /// The name used in a whkdrc, e.g. `swipe3left`
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Swipe3Left => "swipe3left",
+            Self::Swipe3Right => "swipe3right",
+            Self::Swipe3Up => "swipe3up",
+            Self::Swipe3Down => "swipe3down",
+            Self::Swipe4Left => "swipe4left",
+            Self::Swipe4Right => "swipe4right",
+            Self::Swipe4Up => "swipe4up",
+            Self::Swipe4Down => "swipe4down",
+        }
+    }
+
+    /// Parse a name from a whkdrc, ignoring case
+    #[must_use]
+    pub fn parse(name: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|input| input.name().eq_ignore_ascii_case(name))
+    }
+
+    /// How many fingers swipe: 3 or 4
+    #[must_use]
+    pub const fn fingers(self) -> u8 {
+        match self {
+            Self::Swipe3Left | Self::Swipe3Right | Self::Swipe3Up | Self::Swipe3Down => 3,
+            Self::Swipe4Left | Self::Swipe4Right | Self::Swipe4Up | Self::Swipe4Down => 4,
+        }
+    }
+
+    #[must_use]
+    pub const fn direction(self) -> SwipeDirection {
+        match self {
+            Self::Swipe3Left | Self::Swipe4Left => SwipeDirection::Left,
+            Self::Swipe3Right | Self::Swipe4Right => SwipeDirection::Right,
+            Self::Swipe3Up | Self::Swipe4Up => SwipeDirection::Up,
+            Self::Swipe3Down | Self::Swipe4Down => SwipeDirection::Down,
+        }
+    }
+
+    /// The gesture for `fingers` moving in `direction`, if that many fingers have one
+    #[must_use]
+    pub fn swipe(fingers: u8, direction: SwipeDirection) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|input| input.fingers() == fingers && input.direction() == direction)
+    }
+}
+
+impl Display for GestureInput {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name())
+    }
+}
+
 /// A single test against the current state, e.g. `app = Firefox` or `layout != bsp`
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Predicate {
@@ -398,6 +491,76 @@ mod tests {
             wheels,
             vec!["wheelup", "wheeldown", "wheelleft", "wheelright"]
         );
+    }
+
+    #[test]
+    fn gestures_parse_by_name_in_any_case() {
+        for input in GestureInput::ALL {
+            assert_eq!(GestureInput::parse(input.name()), Some(input));
+            assert_eq!(
+                GestureInput::parse(&input.name().to_uppercase()),
+                Some(input)
+            );
+            assert_eq!(input.to_string(), input.name());
+        }
+
+        assert_eq!(
+            GestureInput::parse("Swipe3Left"),
+            Some(GestureInput::Swipe3Left)
+        );
+        for not_a_gesture in [
+            "",
+            "swipe",
+            "swipe2left",
+            "swipe5up",
+            "swipe3",
+            "swipe3left ",
+            "wheelup",
+        ] {
+            assert_eq!(GestureInput::parse(not_a_gesture), None, "{not_a_gesture}");
+        }
+    }
+
+    #[test]
+    fn a_gesture_is_its_fingers_and_its_direction() {
+        for input in GestureInput::ALL {
+            assert!(matches!(input.fingers(), 3 | 4), "{input}");
+            assert_eq!(
+                GestureInput::swipe(input.fingers(), input.direction()),
+                Some(input)
+            );
+            assert!(input
+                .name()
+                .starts_with(&format!("swipe{}", input.fingers())));
+        }
+
+        // every number of fingers has all four directions, and no other number has any
+        for direction in [
+            SwipeDirection::Left,
+            SwipeDirection::Right,
+            SwipeDirection::Up,
+            SwipeDirection::Down,
+        ] {
+            assert!(GestureInput::swipe(3, direction).is_some());
+            assert!(GestureInput::swipe(4, direction).is_some());
+            assert_eq!(GestureInput::swipe(2, direction), None);
+            assert_eq!(GestureInput::swipe(5, direction), None);
+        }
+
+        assert_eq!(
+            GestureInput::swipe(4, SwipeDirection::Up),
+            Some(GestureInput::Swipe4Up)
+        );
+    }
+
+    #[test]
+    fn gestures_and_mouse_inputs_have_different_names() {
+        for gesture in GestureInput::ALL {
+            assert_eq!(MouseInput::parse(gesture.name()), None, "{gesture}");
+        }
+        for mouse in MouseInput::ALL {
+            assert_eq!(GestureInput::parse(mouse.name()), None, "{mouse}");
+        }
     }
 
     #[test]
