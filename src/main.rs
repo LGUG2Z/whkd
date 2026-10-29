@@ -16,6 +16,7 @@ use std::process::Stdio;
 use whkd_core::select;
 use whkd_core::Condition;
 use whkd_core::HotkeyBinding;
+use whkd_core::MouseInput;
 use whkd_core::Shell;
 use whkd_core::State;
 use whkd_core::Whkdrc;
@@ -168,54 +169,64 @@ fn key_validator() -> whkd_parser::KeyValidator {
     whkd_keys::validator()
 }
 
+/// What fires a binding: a keyboard hotkey, or a mouse input held with keyboard modifiers
+#[derive(Debug, Clone)]
+pub enum Trigger {
+    Keyboard {
+        mod_keys: Vec<VKey>,
+        vkey: VKey,
+    },
+    Mouse {
+        mod_keys: Vec<VKey>,
+        input: MouseInput,
+    },
+}
+
+/// Identifies a hotkey however it was written in the whkdrc
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum TriggerId {
+    Keyboard(Vec<u16>, u16),
+    Mouse(Vec<u16>, MouseInput),
+}
+
 #[derive(Debug, Clone)]
 pub struct HkmData {
-    pub mod_keys: Vec<VKey>,
-    pub vkey: VKey,
+    pub trigger: Trigger,
     pub command: String,
     pub condition: Condition,
 }
 
+fn vk_codes(mod_keys: &[VKey]) -> Vec<u16> {
+    let mut codes: Vec<u16> = mod_keys.iter().map(|key| key.to_vk_code()).collect();
+    codes.sort_unstable();
+    codes.dedup();
+    codes
+}
+
 impl HkmData {
-    /// Identifies the hotkey itself, however it was written in the whkdrc
-    fn id(&self) -> (Vec<u16>, u16) {
-        let mut mods: Vec<u16> = self.mod_keys.iter().map(|key| key.to_vk_code()).collect();
-        mods.sort_unstable();
-        mods.dedup();
-        (mods, self.vkey.to_vk_code())
+    fn id(&self) -> TriggerId {
+        match &self.trigger {
+            Trigger::Keyboard { mod_keys, vkey } => {
+                TriggerId::Keyboard(vk_codes(mod_keys), vkey.to_vk_code())
+            }
+            Trigger::Mouse { mod_keys, input } => TriggerId::Mouse(vk_codes(mod_keys), *input),
+        }
     }
 
     pub fn register(&self, hkm: &mut HotkeyManager<()>, shell: Shell) -> Result<()> {
+        let Trigger::Keyboard { mod_keys, vkey } = &self.trigger else {
+            mouse_not_active(self);
+            return Ok(());
+        };
+
         let cmd = self.command.clone();
 
-        if let Err(error) = hkm.register_hotkey(self.vkey, self.mod_keys.as_slice(), move || {
-            let mut retry_with_new_session = false;
-
-            if let Some(session_stdin) = SESSION_STDIN.lock().as_mut() {
-                if matches!(shell, Shell::Pwsh | Shell::Powershell) {
-                    println!("{cmd}");
-                }
-
-                if writeln!(session_stdin, "{cmd}").is_err() {
-                    retry_with_new_session = true;
-                }
-            }
-
-            if retry_with_new_session && spawn_shell(shell).is_ok() {
-                if let Some(session_stdin) = SESSION_STDIN.lock().as_mut() {
-                    if matches!(shell, Shell::Pwsh | Shell::Powershell) {
-                        println!("{cmd}");
-                    }
-
-                    if writeln!(session_stdin, "{cmd}").is_err() {
-                        eprintln!("Unable to write to stdin session");
-                    }
-                }
-            }
+        if let Err(error) = hkm.register_hotkey(*vkey, mod_keys.as_slice(), move || {
+            run_command(shell, &cmd);
         }) {
             eprintln!(
-                "Unable to bind '{:?} + {}' to '{}' (error: {error}), ignoring this binding and continuing...",
-                self.mod_keys, self.vkey, self.command
+                "Unable to bind '{mod_keys:?} + {vkey}' to '{}' (error: {error}), ignoring this binding and continuing...",
+                self.command
             );
         }
 
@@ -223,27 +234,38 @@ impl HkmData {
     }
 }
 
+fn mouse_not_active(data: &HkmData) {
+    eprintln!(
+        "Mouse bindings are not active in this build, ignoring the binding for '{}'",
+        data.command
+    );
+}
+
 impl TryFrom<&HotkeyBinding> for HkmData {
     type Error = WHKError;
 
     fn try_from(value: &HotkeyBinding) -> Result<Self, Self::Error> {
-        let mut mod_keys = vec![];
+        let (last, mods) = value
+            .keys
+            .split_last()
+            .expect("a binding has at least one key");
 
-        let (mod_keys, vkey) = if value.keys.len() == 1 {
-            (vec![], VKey::from_keyname(&value.keys[0])?)
-        } else {
-            let (trigger, mods) = value.keys.split_last().unwrap();
-            let vkey = VKey::from_keyname(trigger)?;
-            for m in mods {
-                mod_keys.push(VKey::from_keyname(m)?);
-            }
+        let mod_keys = mods
+            .iter()
+            .map(|key| VKey::from_keyname(key))
+            .collect::<Result<Vec<_>, _>>()?;
 
-            (mod_keys, vkey)
+        // the parser guarantees that a mouse input is the last key
+        let trigger = match MouseInput::parse(last) {
+            Some(input) => Trigger::Mouse { mod_keys, input },
+            None => Trigger::Keyboard {
+                mod_keys,
+                vkey: VKey::from_keyname(last)?,
+            },
         };
 
         Ok(Self {
-            mod_keys,
-            vkey,
+            trigger,
             command: value.command.clone(),
             condition: value.condition.clone(),
         })
@@ -301,6 +323,33 @@ fn select_command(entries: &[HkmData]) -> Option<String> {
     select(entries.iter().map(|e| (&e.condition, &e.command)), &state)
         .filter(|cmd| cmd.as_str() != whkd_parser::syntax::IGNORE)
         .cloned()
+}
+
+/// Run a command in the shell session, starting a new session if the old one has gone away
+fn run_command(shell: Shell, cmd: &str) {
+    let mut retry_with_new_session = false;
+
+    if let Some(session_stdin) = SESSION_STDIN.lock().as_mut() {
+        if matches!(shell, Shell::Pwsh | Shell::Powershell) {
+            println!("{cmd}");
+        }
+
+        if writeln!(session_stdin, "{cmd}").is_err() {
+            retry_with_new_session = true;
+        }
+    }
+
+    if retry_with_new_session && spawn_shell(shell).is_ok() {
+        if let Some(session_stdin) = SESSION_STDIN.lock().as_mut() {
+            if matches!(shell, Shell::Pwsh | Shell::Powershell) {
+                println!("{cmd}");
+            }
+
+            if writeln!(session_stdin, "{cmd}").is_err() {
+                eprintln!("Unable to write to stdin session");
+            }
+        }
+    }
 }
 
 fn spawn_shell(shell: Shell) -> Result<()> {
@@ -397,28 +446,7 @@ fn main() -> Result<()> {
             println!("whkd is now {current_state}");
 
             if let Some(cmd) = &whkdrc.pause_hook {
-                let mut retry_with_new_session = false;
-                if let Some(session_stdin) = SESSION_STDIN.lock().as_mut() {
-                    if matches!(whkdrc.shell, Shell::Pwsh | Shell::Powershell) {
-                        println!("{cmd}");
-                    }
-
-                    if writeln!(session_stdin, "{cmd}").is_err() {
-                        retry_with_new_session = true;
-                    }
-                }
-
-                if retry_with_new_session && spawn_shell(whkdrc.shell).is_ok() {
-                    if let Some(session_stdin) = SESSION_STDIN.lock().as_mut() {
-                        if matches!(whkdrc.shell, Shell::Pwsh | Shell::Powershell) {
-                            println!("{cmd}");
-                        }
-
-                        if writeln!(session_stdin, "{cmd}").is_err() {
-                            eprintln!("Unable to write to stdin session");
-                        }
-                    }
-                }
+                run_command(whkdrc.shell, cmd);
             }
         }) {
             eprintln!(
@@ -428,7 +456,7 @@ fn main() -> Result<()> {
     }
 
     // everything bound to the same hotkey is decided together when it is pressed, in file order
-    let mut mapped: HashMap<(Vec<u16>, u16), Vec<HkmData>> = HashMap::new();
+    let mut mapped: HashMap<TriggerId, Vec<HkmData>> = HashMap::new();
     for (_, app_bindings) in &whkdrc.app_bindings {
         for binding in app_bindings {
             let data = HkmData::try_from(binding)?;
@@ -447,37 +475,17 @@ fn main() -> Result<()> {
     }
 
     for (_, v) in mapped {
-        let vkey = v[0].vkey;
-        let mod_keys = v[0].mod_keys.as_slice();
+        let Trigger::Keyboard { mod_keys, vkey } = &v[0].trigger else {
+            mouse_not_active(&v[0]);
+            continue;
+        };
 
-        let v = v.clone();
-        hkm.register_hotkey(vkey, mod_keys, move || {
-            let Some(cmd) = select_command(&v) else {
-                return;
-            };
+        let (vkey, mod_keys) = (*vkey, mod_keys.clone());
+        let shell = whkdrc.shell;
 
-            let mut retry_with_new_session = false;
-
-            if let Some(session_stdin) = SESSION_STDIN.lock().as_mut() {
-                if matches!(whkdrc.shell, Shell::Pwsh | Shell::Powershell) {
-                    println!("{cmd}");
-                }
-
-                if writeln!(session_stdin, "{cmd}").is_err() {
-                    retry_with_new_session = true;
-                }
-            }
-
-            if retry_with_new_session && spawn_shell(whkdrc.shell).is_ok() {
-                if let Some(session_stdin) = SESSION_STDIN.lock().as_mut() {
-                    if matches!(whkdrc.shell, Shell::Pwsh | Shell::Powershell) {
-                        println!("{cmd}");
-                    }
-
-                    if writeln!(session_stdin, "{cmd}").is_err() {
-                        eprintln!("Unable to write to stdin session");
-                    }
-                }
+        hkm.register_hotkey(vkey, mod_keys.as_slice(), move || {
+            if let Some(cmd) = select_command(&v) {
+                run_command(shell, &cmd);
             }
         })?;
     }
