@@ -6,6 +6,7 @@ use clap::Subcommand;
 use color_eyre::eyre::eyre;
 use color_eyre::eyre::Result;
 use lazy_static::lazy_static;
+use mouse::Modifiers;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::io::Write;
@@ -13,6 +14,7 @@ use std::path::PathBuf;
 use std::process::ChildStdin;
 use std::process::Command;
 use std::process::Stdio;
+use std::sync::Arc;
 use whkd_core::select;
 use whkd_core::Condition;
 use whkd_core::HotkeyBinding;
@@ -24,9 +26,7 @@ use win_hotkeys::error::WHKError;
 use win_hotkeys::HotkeyManager;
 use win_hotkeys::VKey;
 
-// the logic is tested here and used by the mouse hook, which comes next
 mod komorebi;
-#[allow(dead_code)]
 mod mouse;
 
 lazy_static! {
@@ -216,9 +216,17 @@ impl HkmData {
         }
     }
 
+    /// What a mouse binding is found by, however it was written in the whkdrc
+    fn mouse_key(&self) -> Option<(MouseInput, Modifiers)> {
+        match &self.trigger {
+            Trigger::Mouse { mod_keys, input } => Some((*input, Modifiers::from_keys(mod_keys))),
+            Trigger::Keyboard { .. } => None,
+        }
+    }
+
     pub fn register(&self, hkm: &mut HotkeyManager<()>, shell: Shell) -> Result<()> {
+        // mouse bindings are not registered with the hotkey manager: see mouse::start
         let Trigger::Keyboard { mod_keys, vkey } = &self.trigger else {
-            mouse_not_active(self);
             return Ok(());
         };
 
@@ -237,13 +245,6 @@ impl HkmData {
     }
 }
 
-fn mouse_not_active(data: &HkmData) {
-    eprintln!(
-        "Mouse bindings are not active in this build, ignoring the binding for '{}'",
-        data.command
-    );
-}
-
 impl TryFrom<&HotkeyBinding> for HkmData {
     type Error = WHKError;
 
@@ -260,7 +261,20 @@ impl TryFrom<&HotkeyBinding> for HkmData {
 
         // the parser guarantees that a mouse input is the last key
         let trigger = match MouseInput::parse(last) {
-            Some(input) => Trigger::Mouse { mod_keys, input },
+            Some(input) => {
+                if let Some(key) = mods
+                    .iter()
+                    .zip(&mod_keys)
+                    .find(|(_, key)| Modifiers::of(**key).is_none())
+                    .map(|(name, _)| name)
+                {
+                    return Err(WHKError::InvalidKey(format!(
+                        "{key} (only alt, ctrl, shift and win can be held with a mouse input)"
+                    )));
+                }
+
+                Trigger::Mouse { mod_keys, input }
+            }
             None => Trigger::Keyboard {
                 mod_keys,
                 vkey: VKey::from_keyname(last)?,
@@ -460,10 +474,14 @@ fn main() -> Result<()> {
 
     // everything bound to the same hotkey is decided together when it is pressed, in file order
     let mut mapped: HashMap<TriggerId, Vec<HkmData>> = HashMap::new();
+    let mut mouse: HashMap<(MouseInput, Modifiers), Vec<HkmData>> = HashMap::new();
     for (_, app_bindings) in &whkdrc.app_bindings {
         for binding in app_bindings {
             let data = HkmData::try_from(binding)?;
-            mapped.entry(data.id()).or_default().push(data);
+            match data.mouse_key() {
+                Some(key) => mouse.entry(key).or_default().push(data),
+                None => mapped.entry(data.id()).or_default().push(data),
+            }
         }
     }
 
@@ -471,6 +489,12 @@ fn main() -> Result<()> {
     let mut plain = vec![];
     for binding in &whkdrc.bindings {
         let data = HkmData::try_from(binding)?;
+
+        if let Some(key) = data.mouse_key() {
+            mouse.entry(key).or_default().push(data);
+            continue;
+        }
+
         match mapped.get_mut(&data.id()) {
             Some(group) => group.push(data),
             None => plain.push(data),
@@ -479,7 +503,6 @@ fn main() -> Result<()> {
 
     for (_, v) in mapped {
         let Trigger::Keyboard { mod_keys, vkey } = &v[0].trigger else {
-            mouse_not_active(&v[0]);
             continue;
         };
 
@@ -495,6 +518,24 @@ fn main() -> Result<()> {
 
     for data in plain {
         data.register(&mut hkm, whkdrc.shell)?;
+    }
+
+    // the hook that listens for the mouse is only started if there is something to listen for
+    if !mouse.is_empty() {
+        let shell = whkdrc.shell;
+
+        mouse::start(
+            mouse
+                .into_iter()
+                .map(|(key, entries)| (key, Arc::new(entries))),
+            hkm.pause_handle(),
+            false,
+            move |entries| {
+                if let Some(cmd) = select_command(&entries) {
+                    run_command(shell, &cmd);
+                }
+            },
+        )?;
     }
 
     hkm.event_loop();

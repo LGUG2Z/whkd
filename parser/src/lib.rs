@@ -253,11 +253,14 @@ pub fn parse_full(src: &str, keys: Option<&KeyValidator>) -> Result<Parsed, Pars
     .parse_file()
 }
 
+type Check = Box<dyn Fn(&str) -> bool>;
+
 /// Knows which key names are valid, so the parser can point at bad ones in the whkdrc
 pub struct KeyValidator {
-    is_valid: Box<dyn Fn(&str) -> bool>,
+    is_valid: Check,
     known: Vec<String>,
     synonyms: Vec<(String, String)>,
+    is_modifier: Option<Check>,
 }
 
 impl KeyValidator {
@@ -267,7 +270,16 @@ impl KeyValidator {
             is_valid: Box::new(is_valid),
             known,
             synonyms: vec![],
+            is_modifier: None,
         }
+    }
+
+    /// Say which keys are modifiers, so that the keys held with a mouse input can be checked: only
+    /// modifiers can be, because only they can be seen from a mouse hook
+    #[must_use]
+    pub fn with_modifiers(mut self, is_modifier: impl Fn(&str) -> bool + 'static) -> Self {
+        self.is_modifier = Some(Box::new(is_modifier));
+        self
     }
 
     /// Names people commonly try that are not valid, mapped to the valid name to suggest instead
@@ -616,7 +628,36 @@ impl<'a> Cursor<'a> {
         }
 
         check_mouse_inputs(&keys, &spans, allow_mouse)?;
+        self.check_mouse_modifiers(&keys, &spans)?;
         Ok(keys)
+    }
+
+    /// The keys held with a mouse input have to be modifiers, if it is known which keys are
+    fn check_mouse_modifiers(
+        &self,
+        keys: &[String],
+        spans: &[Range<usize>],
+    ) -> Result<(), ParseError> {
+        let (Some(validator), Some(last)) = (self.keys, keys.last()) else {
+            return Ok(());
+        };
+        let Some(is_modifier) = &validator.is_modifier else {
+            return Ok(());
+        };
+        let Some(input) = MouseInput::parse(last) else {
+            return Ok(());
+        };
+
+        let held = &keys[..keys.len() - 1];
+        match held.iter().zip(spans).find(|(key, _)| !is_modifier(key)) {
+            Some((key, span)) => Err(ParseError::new(
+                format!("`{key}` cannot be held down with `{input}`"),
+                span.clone(),
+                "not a modifier",
+            )
+            .with_help("only alt, ctrl, shift and win can be used with a mouse input")),
+            None => Ok(()),
+        }
     }
 
     fn parse_key(&mut self) -> Result<String, ParseError> {
@@ -1950,5 +1991,41 @@ del : x",
             messages(src),
             vec!["`Alt + WheelUp` already has a default command"]
         );
+    }
+
+    #[test]
+    fn test_only_modifiers_can_be_held_with_a_mouse_input() {
+        let keys = KeyValidator::new(|_| true, vec![])
+            .with_modifiers(|key| ["alt", "ctrl"].contains(&key));
+
+        let src = ".shell cmd
+alt + h + wheelup : x
+";
+        let e = parse_with(src, &keys).unwrap_err();
+        assert_eq!(e.message, "`h` cannot be held down with `wheelup`");
+        assert_eq!(&src[e.span.clone()], "h");
+
+        // modifiers are fine, and so is every keyboard binding
+        assert!(parse_with(
+            ".shell cmd
+ctrl + alt + wheelup : x
+",
+            &keys
+        )
+        .is_ok());
+        assert!(parse_with(
+            ".shell cmd
+alt + h : x
+",
+            &keys
+        )
+        .is_ok());
+        // without the knowledge of which keys are modifiers, nothing is checked
+        assert!(parse(
+            ".shell cmd
+alt + h + wheelup : x
+"
+        )
+        .is_ok());
     }
 }

@@ -123,6 +123,65 @@ formatting can never change what a configuration means. Comments and blank lines
 Bindings are never reordered, merged or split, and commands are not touched. Lines the formatter does not understand
 (for example several constructs on one line) cause the file to be left as it is.
 
+## Mouse and trackpad bindings
+
+A mouse button or a scroll direction can trigger a binding, as the last key of a hotkey, held with keyboard modifiers:
+
+```
+alt + wheelup   : komorebic focus left
+alt + wheeldown : komorebic focus right
+alt + mbutton   : komorebic toggle-monocle
+alt + xbutton1  : komorebic cycle-workspace previous
+
+# they take conditions like any other binding
+alt + wheelup when layout = scrolling : komorebic scroll-left
+alt + shift + wheeldown [
+    app = Firefox : echo only in firefox
+    Default       : echo everywhere else
+]
+```
+
+| Name | Input |
+|---|---|
+| `lbutton`, `rbutton`, `mbutton` | left, right and middle button |
+| `xbutton1`, `xbutton2` | the back and forward buttons |
+| `wheelup`, `wheeldown` | scrolling up and down |
+| `wheelleft`, `wheelright` | scrolling sideways |
+
+Names are not case sensitive, and `whkd validate` suggests the right one for a typo or a synonym (`scrollup`,
+`mouse3`, ...).
+
+- A mouse input has to be the **last** key, and only alt, ctrl, shift and win can be held with it. Their left and right
+  versions are the same, and they must match exactly: `alt + wheelup` does not fire with shift held as well
+- `lbutton` and `rbutton` need a modifier. Binding a plain click would swallow every click, leaving no way to fix the
+  config
+- `.pause` has to be a keyboard hotkey, and pausing whkd pauses the mouse bindings too
+- A button fires when it is **pressed**, and its release is swallowed as well, so that an application never sees a
+  release without a press
+- Like keyboard hotkeys, a mouse input that has a binding is swallowed: it is not delivered to the window under the
+  cursor, even if none of the conditions match. Use a plain binding, or a `Default` entry, to say what happens then
+- `app =` is the focused window, as it is for keyboard bindings, not the window under the cursor
+- Input that other programs synthesise is ignored, so a command that sends a click or a scroll cannot trigger itself
+- Nothing listens for the mouse unless the config has a mouse binding
+
+### Trackpads
+
+Two-finger scrolling on a precision touchpad arrives as wheel events, so the `wheel` bindings work with a trackpad as
+they do with a mouse. A trackpad scrolls in small steps, so they are added up, and a binding fires once for each full
+notch (120 units) of scrolling in one direction. What is left over counts towards the next one, and counting starts
+again after half a second without scrolling, when the direction changes, or when the modifiers change.
+
+Gestures with three or four fingers (swipes, taps) are not something Windows passes on to programs. Windows Settings
+can map them to keyboard shortcuts, and whkd can bind those.
+
+### Limits
+
+- Like the keyboard hook, the mouse hook does not see input sent to windows running as administrator unless whkd does
+  too
+- If you use another program that handles the mouse (komorebi's focus follows mouse, window dragging), pick modifier
+  and button combinations it does not use
+- A held mouse button as a modifier (`lbutton + h`) and drag bindings are not supported
+
 ## Editor support
 
 `whkdrc` has no file extension, so editors need to be told what it is. The files in `editors/` are generated from the

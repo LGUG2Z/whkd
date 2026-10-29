@@ -1036,6 +1036,7 @@ dependencies = [
  "whkd-keys",
  "whkd-parser",
  "win-hotkeys",
+ "windows 0.60.0",
 ]
 
 [[package]]

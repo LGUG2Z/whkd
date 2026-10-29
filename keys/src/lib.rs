@@ -100,7 +100,9 @@ pub fn modifiers() -> Vec<String> {
 /// is, with a suggestion
 #[must_use]
 pub fn validator() -> KeyValidator {
-    KeyValidator::new(is_valid, names()).with_synonyms(&SYNONYMS)
+    KeyValidator::new(is_valid, names())
+        .with_synonyms(&SYNONYMS)
+        .with_modifiers(is_modifier)
 }
 
 #[cfg(test)]
@@ -165,5 +167,44 @@ mod tests {
         assert_eq!(help("mouse3").as_deref(), Some("did you mean `mbutton`?"));
         // a transposition is a typo, not a synonym
         assert_eq!(help("whelup").as_deref(), Some("did you mean `wheelup`?"));
+    }
+
+    #[test]
+    fn the_keys_held_with_a_mouse_input_must_be_modifiers() {
+        let keys = validator();
+        let parse = |hotkey: &str| {
+            whkd_parser::parse_with(
+                &format!(
+                    ".shell cmd
+{hotkey} : x
+"
+                ),
+                &keys,
+            )
+        };
+
+        for fine in [
+            "alt + wheelup",
+            "ctrl + shift + mbutton",
+            "lwin + rctrl + xbutton1",
+        ] {
+            assert!(parse(fine).is_ok(), "{fine}");
+        }
+
+        for not_fine in [
+            "alt + h + wheelup",
+            "space + mbutton",
+            "f1 + alt + xbutton2",
+        ] {
+            let e = parse(not_fine).unwrap_err();
+            assert!(
+                e.message.contains("cannot be held down"),
+                "{not_fine}: {}",
+                e.message
+            );
+        }
+
+        // a keyboard hotkey can have any keys before the last, as ever
+        assert!(parse("a + b + h").is_ok());
     }
 }

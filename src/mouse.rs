@@ -8,12 +8,46 @@
 //! decided from the bindings alone. Which command a binding runs, which can depend on the focused
 //! application or on komorebi, is decided later, off the hook's thread.
 
+use crate::HkmData;
+use color_eyre::eyre::eyre;
+use color_eyre::eyre::Result;
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::sync::mpsc;
+use std::sync::Arc;
+use std::sync::OnceLock;
+use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 use whkd_core::MouseInput;
+use win_hotkeys::state::KeyboardState;
+use win_hotkeys::PauseHandle;
 use win_hotkeys::VKey;
+use windows::Win32::Foundation::LPARAM;
+use windows::Win32::Foundation::LRESULT;
+use windows::Win32::Foundation::WPARAM;
+use windows::Win32::UI::WindowsAndMessaging::CallNextHookEx;
+use windows::Win32::UI::WindowsAndMessaging::DispatchMessageW;
+use windows::Win32::UI::WindowsAndMessaging::GetMessageW;
+use windows::Win32::UI::WindowsAndMessaging::SetWindowsHookExW;
+use windows::Win32::UI::WindowsAndMessaging::TranslateMessage;
+use windows::Win32::UI::WindowsAndMessaging::HC_ACTION;
+use windows::Win32::UI::WindowsAndMessaging::LLMHF_INJECTED;
+use windows::Win32::UI::WindowsAndMessaging::MSG;
+use windows::Win32::UI::WindowsAndMessaging::MSLLHOOKSTRUCT;
+use windows::Win32::UI::WindowsAndMessaging::WH_MOUSE_LL;
+use windows::Win32::UI::WindowsAndMessaging::WM_LBUTTONDOWN;
+use windows::Win32::UI::WindowsAndMessaging::WM_LBUTTONUP;
+use windows::Win32::UI::WindowsAndMessaging::WM_MBUTTONDOWN;
+use windows::Win32::UI::WindowsAndMessaging::WM_MBUTTONUP;
+use windows::Win32::UI::WindowsAndMessaging::WM_MOUSEHWHEEL;
+use windows::Win32::UI::WindowsAndMessaging::WM_MOUSEMOVE;
+use windows::Win32::UI::WindowsAndMessaging::WM_MOUSEWHEEL;
+use windows::Win32::UI::WindowsAndMessaging::WM_RBUTTONDOWN;
+use windows::Win32::UI::WindowsAndMessaging::WM_RBUTTONUP;
+use windows::Win32::UI::WindowsAndMessaging::WM_XBUTTONDOWN;
+use windows::Win32::UI::WindowsAndMessaging::WM_XBUTTONUP;
 
 /// One notch of a mouse wheel, in the units Windows reports. Smooth scrolling (a trackpad, or a
 /// high resolution wheel) reports fractions of it, so deltas are accumulated until they add up
@@ -121,10 +155,6 @@ impl<T: Clone> Handler<T> {
         }
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.bindings.is_empty()
-    }
-
     /// Decide what to do with `event`, with `modifiers` held and the time `now`
     pub fn handle(&mut self, event: Event, modifiers: Modifiers, now: Instant) -> Decision<T> {
         match event {
@@ -192,6 +222,155 @@ impl<T: Clone> Handler<T> {
             Decision::Swallow
         }
     }
+}
+
+/// The bindings that apply to one mouse input with one set of modifiers, in file order. A binding
+/// without conditions comes last, as what runs when none of the others match
+pub type Entries = Arc<Vec<HkmData>>;
+
+struct Shared {
+    handler: Mutex<Handler<Entries>>,
+    /// To the worker thread, which works out the command and runs it. The hook must not do that: it
+    /// can involve asking komorebi a question, and a hook that is slow is removed by Windows
+    fire: mpsc::Sender<Entries>,
+    paused: PauseHandle,
+    allow_injected: bool,
+}
+
+static SHARED: OnceLock<Shared> = OnceLock::new();
+
+/// What a message from the mouse hook means. `mouse_data` is the `mouseData` of the hook's
+/// `MSLLHOOKSTRUCT`: for a wheel its high word is the (signed) delta, for an extra button its high
+/// word says which one
+#[must_use]
+pub fn decode(message: u32, mouse_data: u32) -> Option<Event> {
+    let high_word = (mouse_data >> 16) as u16;
+
+    let extra_button = || match high_word {
+        1 => Some(MouseInput::XButton1),
+        2 => Some(MouseInput::XButton2),
+        _ => None,
+    };
+
+    match message {
+        WM_LBUTTONDOWN => Some(Event::ButtonDown(MouseInput::LButton)),
+        WM_LBUTTONUP => Some(Event::ButtonUp(MouseInput::LButton)),
+        WM_RBUTTONDOWN => Some(Event::ButtonDown(MouseInput::RButton)),
+        WM_RBUTTONUP => Some(Event::ButtonUp(MouseInput::RButton)),
+        WM_MBUTTONDOWN => Some(Event::ButtonDown(MouseInput::MButton)),
+        WM_MBUTTONUP => Some(Event::ButtonUp(MouseInput::MButton)),
+        WM_XBUTTONDOWN => extra_button().map(Event::ButtonDown),
+        WM_XBUTTONUP => extra_button().map(Event::ButtonUp),
+        WM_MOUSEWHEEL => Some(Event::Wheel {
+            horizontal: false,
+            delta: i32::from(high_word as i16),
+        }),
+        WM_MOUSEHWHEEL => Some(Event::Wheel {
+            horizontal: true,
+            delta: i32::from(high_word as i16),
+        }),
+        _ => None,
+    }
+}
+
+/// Whether the event is ours, and so is to be hidden from the application
+fn swallow(message: u32, info: &MSLLHOOKSTRUCT) -> bool {
+    let Some(shared) = SHARED.get() else {
+        return false;
+    };
+
+    let Some(event) = decode(message, info.mouseData) else {
+        return false;
+    };
+
+    // input that was synthesised, perhaps by a command whkd ran, is never ours: that could loop
+    if info.flags & LLMHF_INJECTED != 0 && !shared.allow_injected {
+        return false;
+    }
+
+    // while paused nothing new fires, but a release still has to be swallowed if its press was, or
+    // the application would see a release without a press
+    if shared.paused.is_paused() && !matches!(event, Event::ButtonUp(_)) {
+        return false;
+    }
+
+    let modifiers =
+        Modifiers::from_pressed(|key| KeyboardState::get_async_key_state(key.to_vk_code()));
+
+    match shared
+        .handler
+        .lock()
+        .handle(event, modifiers, Instant::now())
+    {
+        Decision::Pass => false,
+        Decision::Swallow => true,
+        Decision::Fire(entries) => {
+            let _ = shared.fire.send(entries);
+            true
+        }
+    }
+}
+
+unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    // the mouse moves a lot, and none of it is ours
+    if code == HC_ACTION as i32 && wparam.0 as u32 != WM_MOUSEMOVE {
+        let info = unsafe { &*(lparam.0 as *const MSLLHOOKSTRUCT) };
+        if swallow(wparam.0 as u32, info) {
+            return LRESULT(1);
+        }
+    }
+
+    unsafe { CallNextHookEx(None, code, wparam, lparam) }
+}
+
+/// Listen for mouse input, and call `on_fire` with the entries of each binding that fires, on a
+/// worker thread. Meant to be started once, and only if there are mouse bindings: the hook sees
+/// every mouse event for as long as it runs.
+///
+/// `allow_injected` lets synthesised input through to the bindings, which is for tests only.
+pub fn start(
+    bindings: impl IntoIterator<Item = ((MouseInput, Modifiers), Entries)>,
+    paused: PauseHandle,
+    allow_injected: bool,
+    on_fire: impl Fn(Entries) + Send + 'static,
+) -> Result<()> {
+    let (fire, queue) = mpsc::channel::<Entries>();
+
+    SHARED
+        .set(Shared {
+            handler: Mutex::new(Handler::new(bindings)),
+            fire,
+            paused,
+            allow_injected,
+        })
+        .map_err(|_| eyre!("the mouse hook is already running"))?;
+
+    thread::spawn(move || {
+        for entries in queue {
+            on_fire(entries);
+        }
+    });
+
+    // a low-level hook is called on the thread that installed it, which has to pump messages
+    thread::spawn(|| unsafe {
+        let _hook = match SetWindowsHookExW(WH_MOUSE_LL, Some(hook_proc), None, 0) {
+            Ok(hook) => hook,
+            Err(error) => {
+                eprintln!(
+                    "Unable to listen for mouse input (error: {error}), mouse bindings will not work"
+                );
+                return;
+            }
+        };
+
+        let mut message = MSG::default();
+        while GetMessageW(&mut message, None, 0, 0).as_bool() {
+            let _ = TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+    });
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -478,7 +657,6 @@ mod tests {
     #[test]
     fn an_empty_handler_passes_everything() {
         let mut h: Handler<&str> = Handler::new([]);
-        assert!(h.is_empty());
         let now = Instant::now();
 
         assert_eq!(h.handle(wheel(120), ALT, now), Decision::Pass);
@@ -486,5 +664,152 @@ mod tests {
             h.handle(Event::ButtonDown(MouseInput::MButton), ALT, now),
             Decision::Pass
         );
+    }
+
+    fn word(high: i16) -> u32 {
+        u32::from(high as u16) << 16
+    }
+
+    #[test]
+    fn messages_are_decoded_into_events() {
+        assert_eq!(
+            decode(WM_LBUTTONDOWN, 0),
+            Some(Event::ButtonDown(MouseInput::LButton))
+        );
+        assert_eq!(
+            decode(WM_LBUTTONUP, 0),
+            Some(Event::ButtonUp(MouseInput::LButton))
+        );
+        assert_eq!(
+            decode(WM_RBUTTONDOWN, 0),
+            Some(Event::ButtonDown(MouseInput::RButton))
+        );
+        assert_eq!(
+            decode(WM_MBUTTONUP, 0),
+            Some(Event::ButtonUp(MouseInput::MButton))
+        );
+    }
+
+    #[test]
+    fn the_extra_buttons_are_told_apart_by_the_high_word() {
+        assert_eq!(
+            decode(WM_XBUTTONDOWN, word(1)),
+            Some(Event::ButtonDown(MouseInput::XButton1))
+        );
+        assert_eq!(
+            decode(WM_XBUTTONUP, word(2)),
+            Some(Event::ButtonUp(MouseInput::XButton2))
+        );
+        assert_eq!(decode(WM_XBUTTONDOWN, word(3)), None);
+        assert_eq!(decode(WM_XBUTTONDOWN, 0), None);
+    }
+
+    #[test]
+    fn wheel_deltas_are_signed() {
+        assert_eq!(
+            decode(WM_MOUSEWHEEL, word(120)),
+            Some(Event::Wheel {
+                horizontal: false,
+                delta: 120
+            })
+        );
+        assert_eq!(
+            decode(WM_MOUSEWHEEL, word(-120)),
+            Some(Event::Wheel {
+                horizontal: false,
+                delta: -120
+            })
+        );
+        assert_eq!(
+            decode(WM_MOUSEHWHEEL, word(-30)),
+            Some(Event::Wheel {
+                horizontal: true,
+                delta: -30
+            })
+        );
+    }
+
+    #[test]
+    fn movement_and_other_messages_are_not_events() {
+        assert_eq!(decode(WM_MOUSEMOVE, 0), None);
+        assert_eq!(decode(0, 0), None);
+    }
+
+    /// Starts a real hook and sends real, if synthetic, input, so it is not run by default:
+    /// `cargo test -p whkd -- --ignored mouse`. Nothing else should be using the mouse meanwhile.
+    #[test]
+    #[ignore = "starts a real mouse hook and sends synthetic input"]
+    fn synthetic_input_fires_the_bindings() {
+        use crate::Trigger;
+        use whkd_core::Condition;
+        use win_hotkeys::HotkeyManager;
+        use windows::Win32::UI::Input::KeyboardAndMouse::SendInput;
+        use windows::Win32::UI::Input::KeyboardAndMouse::INPUT;
+        use windows::Win32::UI::Input::KeyboardAndMouse::INPUT_0;
+        use windows::Win32::UI::Input::KeyboardAndMouse::INPUT_MOUSE;
+        use windows::Win32::UI::Input::KeyboardAndMouse::MOUSEEVENTF_WHEEL;
+        use windows::Win32::UI::Input::KeyboardAndMouse::MOUSEEVENTF_XDOWN;
+        use windows::Win32::UI::Input::KeyboardAndMouse::MOUSEEVENTF_XUP;
+        use windows::Win32::UI::Input::KeyboardAndMouse::MOUSEINPUT;
+        use windows::Win32::UI::Input::KeyboardAndMouse::MOUSE_EVENT_FLAGS;
+
+        fn send(flags: MOUSE_EVENT_FLAGS, data: u32) {
+            let input = INPUT {
+                r#type: INPUT_MOUSE,
+                Anonymous: INPUT_0 {
+                    mi: MOUSEINPUT {
+                        dx: 0,
+                        dy: 0,
+                        mouseData: data,
+                        dwFlags: flags,
+                        time: 0,
+                        dwExtraInfo: 0,
+                    },
+                },
+            };
+            unsafe { SendInput(&[input], size_of::<INPUT>() as i32) };
+        }
+
+        let entry = |input, command: &str| -> Entries {
+            Arc::new(vec![HkmData {
+                trigger: Trigger::Mouse {
+                    mod_keys: vec![],
+                    input,
+                },
+                command: command.to_string(),
+                condition: Condition::Always,
+            }])
+        };
+
+        let (fired, seen) = mpsc::channel();
+        start(
+            [
+                (
+                    (MouseInput::XButton1, Modifiers::NONE),
+                    entry(MouseInput::XButton1, "back"),
+                ),
+                (
+                    (MouseInput::WheelUp, Modifiers::NONE),
+                    entry(MouseInput::WheelUp, "up"),
+                ),
+            ],
+            HotkeyManager::<()>::new().pause_handle(),
+            true,
+            move |entries| fired.send(entries[0].command.clone()).unwrap(),
+        )
+        .unwrap();
+
+        // the hook is installed on its own thread, so give it a moment
+        std::thread::sleep(Duration::from_millis(500));
+
+        send(MOUSEEVENTF_XDOWN, 1);
+        send(MOUSEEVENTF_XUP, 1);
+        assert_eq!(seen.recv_timeout(Duration::from_secs(2)).unwrap(), "back");
+
+        send(MOUSEEVENTF_WHEEL, 120);
+        assert_eq!(seen.recv_timeout(Duration::from_secs(2)).unwrap(), "up");
+
+        // the release of the button is swallowed with its press, so that is one firing, not two
+        assert!(seen.recv_timeout(Duration::from_millis(300)).is_err());
     }
 }

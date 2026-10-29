@@ -28,6 +28,7 @@ lazy_static = "1"
 parking_lot = "0.12"
 uds_windows = "1"
 win-hotkeys = "0.5"
+windows = { version = "0.60", features = ["Win32_Foundation", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
 
 [dependencies]
 whkd-core.workspace = true
@@ -41,3 +42,4 @@ lazy_static.workspace = true
 parking_lot.workspace = true
 uds_windows.workspace = true
 win-hotkeys.workspace = true
+windows.workspace = true
