@@ -1,0 +1,11 @@
+.shell pwsh
+
+alt + wheelup : komorebic focus left
+alt + wheeldown : komorebic focus right
+Alt + Shift + MButton : komorebic toggle-monocle
+alt + xbutton1 : komorebic cycle-workspace previous
+alt + wheelup when layout = scrolling : komorebic scroll-left
+alt + shift + wheeldown [
+    app = Firefox : echo only in firefox
+    Default       : echo everywhere else
+]

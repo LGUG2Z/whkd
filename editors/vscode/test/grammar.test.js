@@ -277,6 +277,33 @@ test('tricky cases: a key named when, # ends a command, empty commands', async (
   assertScope(lineWith(lines, 'a process name with a space'), 'Google Chrome', 'entity.name.type.process');
 });
 
+test('mouse inputs are highlighted as keys of their own', async () => {
+  const lines = await fixture('mouse.whkdrc');
+
+  const wheel = lineWith(lines, 'komorebic focus left');
+  assertScope(wheel, 'alt', 'keyword.other.modifier');
+  assertScope(wheel, 'wheelup', 'constant.character.key.mouse');
+  assertScope(lineWith(lines, 'komorebic focus right'), 'wheeldown', 'constant.character.key.mouse');
+
+  // in any case, and with several modifiers
+  const middle = lineWith(lines, 'toggle-monocle');
+  assertScope(middle, 'Alt', 'keyword.other.modifier');
+  assertScope(middle, 'Shift', 'keyword.other.modifier');
+  assertScope(middle, 'MButton', 'constant.character.key.mouse');
+
+  assertScope(lineWith(lines, 'cycle-workspace'), 'xbutton1', 'constant.character.key.mouse');
+
+  // with a guard, and as the trigger of a block
+  const guarded = lineWith(lines, 'scroll-left');
+  assertScope(guarded, 'wheelup', 'constant.character.key.mouse');
+  assertScope(guarded, 'when', 'keyword.control.when');
+  assertScope(lineWith(lines, 'alt + shift + wheeldown ['), 'wheeldown', 'constant.character.key.mouse');
+
+  // a keyboard key is not a mouse input
+  const keyboard = lineWith(await fixture('basic.whkdrc'), 'focus left');
+  assertNotScope(keyboard, 'h', 'constant.character.key.mouse');
+});
+
 test('mistakes are marked invalid, like the parser rejects them', async () => {
   const layouts = await fixture('invalid/unknown-layout.whkdrc');
   assertScope(lineWith(layouts, 'a typo'), 'bpsp', 'invalid.illegal.unknown-layout');
@@ -302,7 +329,7 @@ test('without a valid .shell the commands are plain strings', async () => {
 });
 
 test('valid fixtures contain nothing marked invalid', async () => {
-  for (const name of ['basic', 'blocks', 'when', 'cmd', 'tricky']) {
+  for (const name of ['basic', 'blocks', 'when', 'cmd', 'tricky', 'mouse']) {
     const lines = await fixture(`${name}.whkdrc`);
     for (const line of lines) {
       for (const tok of line) {

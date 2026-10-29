@@ -397,6 +397,10 @@
           "name": "keyword.operator.key-separator.whkdrc"
         },
         {
+          "match": "(?i:(?<![\\p{L}\\p{N}_])(?:wheelright|wheeldown|wheelleft|xbutton1|xbutton2|lbutton|rbutton|mbutton|wheelup)(?![\\p{L}\\p{N}_]))",
+          "name": "constant.character.key.mouse.whkdrc"
+        },
+        {
           "match": "(?:[\\p{L}_][\\p{L}\\p{N}_]*|[0-9]+)",
           "name": "constant.character.key.whkdrc"
         }

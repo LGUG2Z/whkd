@@ -4,6 +4,7 @@
 use serde_json::json;
 use serde_json::Value;
 use whkd_core::Layout;
+use whkd_core::MouseInput;
 use whkd_core::Shell;
 use whkd_parser::syntax;
 
@@ -14,7 +15,9 @@ pub struct Vocabulary {
     pub predicates: Vec<String>,
     pub layouts: Vec<LayoutName>,
     pub modifiers: Vec<String>,
-    /// Every key that is not a modifier
+    /// The buttons and scroll directions that can be the last key of a hotkey
+    pub mouse_inputs: Vec<String>,
+    /// Every keyboard key that is not a modifier
     pub keys: Vec<String>,
 }
 
@@ -27,9 +30,13 @@ pub struct LayoutName {
 impl Vocabulary {
     pub fn load() -> Self {
         let modifiers = whkd_keys::modifiers();
+        let mouse_inputs: Vec<String> = MouseInput::ALL
+            .map(|input| input.name().to_string())
+            .into_iter()
+            .collect();
         let keys = whkd_keys::names()
             .into_iter()
-            .filter(|name| !modifiers.contains(name))
+            .filter(|name| !modifiers.contains(name) && !mouse_inputs.contains(name))
             .collect();
 
         Self {
@@ -45,6 +52,7 @@ impl Vocabulary {
                 .into_iter()
                 .collect(),
             modifiers,
+            mouse_inputs,
             keys,
         }
     }
@@ -73,6 +81,7 @@ impl Vocabulary {
                 .map(|layout| json!({ "name": layout.name, "pattern": layout.pattern }))
                 .collect::<Vec<_>>(),
             "modifiers": self.modifiers,
+            "mouse_inputs": self.mouse_inputs,
             "keys": self.keys,
         })
     }

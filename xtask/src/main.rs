@@ -190,7 +190,8 @@ mod tests {
             .chain(&vocabulary.shells)
             .chain(&vocabulary.keywords)
             .chain(&vocabulary.predicates)
-            .chain(&vocabulary.modifiers);
+            .chain(&vocabulary.modifiers)
+            .chain(&vocabulary.mouse_inputs);
 
         for word in words {
             assert!(

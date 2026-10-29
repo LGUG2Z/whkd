@@ -132,6 +132,13 @@ pub fn grammar(vocabulary: &Vocabulary) -> Value {
                     "name": "keyword.operator.key-separator.whkdrc",
                     "match": escape(&syntax::KEY_SEPARATOR.to_string())
                 },
+                {
+                    "name": "constant.character.key.mouse.whkdrc",
+                    "match": format!(
+                        "(?i:{BEFORE_WORD}(?:{}){AFTER_WORD})",
+                        alternation(&vocabulary.mouse_inputs)
+                    )
+                },
                 { "name": "constant.character.key.whkdrc", "match": key }
             ]
         }),
