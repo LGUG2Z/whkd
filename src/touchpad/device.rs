@@ -10,6 +10,7 @@
 //! touchpad: what comes out of it is the input to everything in `report` onwards, which is tested.
 
 use super::dispatch::Dispatcher;
+use super::frame::Frame;
 use super::protocol::Pad;
 use super::recogniser::Output;
 use super::recogniser::Recogniser;
@@ -376,8 +377,12 @@ struct Message {
     pad: Option<Pad>,
 }
 
+/// Told about every frame of every touchpad, to record them
+type FrameTap = Box<dyn FnMut(&Frame, Option<Pad>) + Send>;
+
 struct Shared {
     pipelines: Mutex<HashMap<isize, Pipeline>>,
+    tap: Option<Mutex<FrameTap>>,
     /// Touchpads that this cannot use, so that it is only said once
     unusable: Mutex<HashSet<isize>>,
     thresholds: Thresholds,
@@ -484,6 +489,10 @@ fn input(lparam: LPARAM) {
             continue;
         };
 
+        if let Some(tap) = &shared.tap {
+            (tap.lock())(&frame, pad);
+        }
+
         for output in pipeline.recogniser.frame(&frame) {
             send(shared, output, pad);
         }
@@ -536,7 +545,17 @@ pub fn start(
 
 /// Listen for touchpads, and hand what the fingers do to `sink`, on a thread of its own
 pub fn start_with(
+    sink: impl FnMut(Output, Modifiers, Option<Pad>) + Send + 'static,
+    paused: PauseHandle,
+    thresholds: Thresholds,
+) -> Result<()> {
+    start_with_tap(sink, None, paused, thresholds)
+}
+
+/// Like [`start_with`], and also hand every frame to `tap`
+pub fn start_with_tap(
     mut sink: impl FnMut(Output, Modifiers, Option<Pad>) + Send + 'static,
+    tap: Option<FrameTap>,
     paused: PauseHandle,
     thresholds: Thresholds,
 ) -> Result<()> {
@@ -545,6 +564,7 @@ pub fn start_with(
     SHARED
         .set(Shared {
             pipelines: Mutex::new(HashMap::new()),
+            tap: tap.map(Mutex::new),
             unusable: Mutex::new(HashSet::new()),
             thresholds,
             queue,

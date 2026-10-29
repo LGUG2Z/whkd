@@ -274,6 +274,34 @@ whkd touchpad > gesture.txt
 The device information goes to the standard error, so the file holds only the gesture, which is the way to report that
 a gesture was not recognised, or to try a command against one you have recorded.
 
+### Trying it without a touchpad
+
+Everything after the touchpad's reports can be tried without one, by replaying frames (where the fingers are, in
+centimetres) through the real recogniser, so a command can be tried against a gesture end to end:
+
+```
+whkd touchpad --demo swipe3right | komorebic pan --stream
+```
+
+`--demo` takes `swipe3left` ... `swipe4down`, `pan3-slow` (a slow drag that is not a swipe), `pan3-flick`, `pan3-long`
+(about two seconds of dragging one way, back a little and away, with the uneven timing of a real touchpad: around 125
+frames a second, and never exactly), and `scroll-then-three` (two fingers scrolling and a third joining late, which is
+not a gesture). The lines come at the pace the fingers moved, or all at once with `--instant`.
+
+In PowerShell, pipe through `cmd` to keep that pace: PowerShell holds back what passes between two programs and
+hands it over in bursts, so a command would see the fingers stop and start. `cmd` passes each line on as it is
+written:
+
+```
+cmd /c "whkd touchpad --demo pan3-long | komorebic pan --stream"
+```
+
+A recording is a text file with a frame on each line, which can be read and edited by hand. `whkd touchpad --frames`
+writes one from a real touchpad, `whkd touchpad --demo swipe3right --frames` writes one to start from, and
+`whkd touchpad --replay gesture.frames` plays it back. A line is a time in milliseconds and then each finger as
+`id:x:y`, or `id:x:y:palm` for one the touchpad does not believe is a finger. A capture from a real touchpad is the
+most useful thing to send when a gesture is not recognised as it should be.
+
 ### Limits
 
 - It needs a Precision Touchpad. An older touchpad that is only a mouse to Windows reports nothing

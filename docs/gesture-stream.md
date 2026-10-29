@@ -72,6 +72,10 @@ The format will only grow:
 If the input closes with neither an `end` nor a `cancel`, whkd was stopped in the middle of the gesture. A program
 should treat that as a `cancel`.
 
+`whkd touchpad` also writes `swipe <gesture>` lines, marking where a swipe with a direction would run its
+command. They are for the person watching and are never sent to a stream's input. A `swipe3` stream and a `swipe3right`
+binding are not exclusive: both can fire for the same fingers.
+
 ## Reading it
 
 A shell script:

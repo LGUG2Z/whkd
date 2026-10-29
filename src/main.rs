@@ -350,19 +350,94 @@ enum SubCommand {
         check: bool,
     },
     /// Show what the touchpad's fingers do, as a command bound to swipe3 or swipe4 would be told
-    Touchpad,
+    Touchpad {
+        /// Replay a recording of frames (made with --frames) instead of listening to a touchpad
+        #[clap(long, value_name = "FILE", conflicts_with_all = ["demo", "frames"])]
+        replay: Option<PathBuf>,
+        /// Replay a made-up gesture instead of listening to a touchpad: swipe3left ... swipe4down,
+        /// pan3-slow, pan3-flick or scroll-then-three
+        #[clap(long, value_name = "NAME", conflicts_with = "replay")]
+        demo: Option<String>,
+        /// When replaying, do not wait between frames
+        #[clap(long)]
+        instant: bool,
+        /// Write the frames of the touchpad, to record a gesture, instead of what they mean. With
+        /// --demo, write the frames of the made-up gesture, to start a recording from
+        #[clap(long, conflicts_with = "replay")]
+        frames: bool,
+    },
 }
 
 /// Say which precision touchpads there are, and then what the fingers on them do, in the lines a
 /// stream binding's command is given. The lines go to the standard output, and the rest to the
 /// standard error, so that redirecting the output records a gesture that can be replayed
-fn touchpad_diagnostic() -> Result<()> {
+fn touchpad_diagnostic(
+    replay: Option<PathBuf>,
+    demo: Option<String>,
+    instant: bool,
+    frames: bool,
+) -> Result<()> {
+    use touchpad::recogniser::Output;
+    use touchpad::replay::Recording;
+
+    // what is said about a gesture, as a command bound to swipe3 or swipe4 would be told, or a
+    // line saying that a swipe with a direction would run its command
+    let say =
+        |output: &Output, pad: Option<touchpad::protocol::Pad>| match touchpad::protocol::encode(
+            output, pad,
+        ) {
+            Some(line) => println!("{line}"),
+            None => {
+                if let Output::Swipe(gesture) = output {
+                    println!("swipe {gesture}");
+                }
+            }
+        };
+
+    let recording: Option<Recording> = match (replay, demo) {
+        (Some(path), _) => {
+            let text = std::fs::read_to_string(&path)
+                .map_err(|error| eyre!("could not read {}: {error}", path.display()))?;
+            Some(
+                touchpad::replay::parse(&text)
+                    .map_err(|error| eyre!("{}: {error}", path.display()))?,
+            )
+        }
+        (_, Some(name)) => Some(touchpad::replay::demo(&name).ok_or_else(|| {
+            eyre!(
+                "there is no made-up gesture called '{name}', try one of: {}",
+                touchpad::replay::DEMOS.join(", ")
+            )
+        })?),
+        (None, None) => None,
+    };
+
+    if let Some(recording) = recording {
+        if frames {
+            print!("{}", touchpad::replay::format(&recording));
+            return Ok(());
+        }
+
+        eprintln!(
+            "Replaying {} frames{}. Lines are written as a command bound to swipe3 or swipe4 would be given them.",
+            recording.frames.len(),
+            if instant { "" } else { " at the pace they were recorded" }
+        );
+
+        touchpad::replay::replay(
+            &recording,
+            touchpad::recogniser::Thresholds::default(),
+            !instant,
+            say,
+        );
+        return Ok(());
+    }
+
     let touchpads = touchpad::device::find_touchpads();
     eprintln!("{} precision touchpad(s) found", touchpads.len());
     for touchpad in &touchpads {
         eprintln!(
-            "{}
-  {}",
+            "{}\n  {}",
             touchpad.name,
             touchpad::device::describe(touchpad)
         );
@@ -373,21 +448,33 @@ fn touchpad_diagnostic() -> Result<()> {
     }
 
     eprintln!("Put three or four fingers on the touchpad. Press Ctrl+C to stop.");
-    eprintln!("Lines are written as a command bound to swipe3 or swipe4 would be given them,");
-    eprintln!("and `swipe ...` lines are what a swipe with a direction would run once.");
 
-    touchpad::device::start_with(
-        |output, _modifiers, pad| match touchpad::protocol::encode(&output, pad) {
-            Some(line) => println!("{line}"),
-            None => {
-                if let touchpad::recogniser::Output::Swipe(gesture) = output {
-                    println!("swipe {gesture}");
+    if frames {
+        eprintln!("Writing the frames, which can be replayed with --replay.");
+
+        let mut header_written = false;
+        touchpad::device::start_with_tap(
+            |_, _, _| {},
+            Some(Box::new(move |frame, pad| {
+                if !header_written {
+                    print!("{}", touchpad::replay::header(pad));
+                    header_written = true;
                 }
-            }
-        },
-        win_hotkeys::HotkeyManager::<()>::new().pause_handle(),
-        touchpad::recogniser::Thresholds::default(),
-    )?;
+                println!("{}", touchpad::replay::format_frame(frame));
+            })),
+            win_hotkeys::HotkeyManager::<()>::new().pause_handle(),
+            touchpad::recogniser::Thresholds::default(),
+        )?;
+    } else {
+        eprintln!("Lines are written as a command bound to swipe3 or swipe4 would be given them,");
+        eprintln!("and `swipe ...` lines are what a swipe with a direction would run once.");
+
+        touchpad::device::start_with(
+            move |output, _modifiers, pad| say(&output, pad),
+            win_hotkeys::HotkeyManager::<()>::new().pause_handle(),
+            touchpad::recogniser::Thresholds::default(),
+        )?;
+    }
 
     loop {
         std::thread::park();
@@ -498,8 +585,14 @@ fn main() -> Result<()> {
         return fmt(path.or(cli.config), write, check);
     }
 
-    if let Some(SubCommand::Touchpad) = cli.command {
-        return touchpad_diagnostic();
+    if let Some(SubCommand::Touchpad {
+        replay,
+        demo,
+        instant,
+        frames,
+    }) = cli.command
+    {
+        return touchpad_diagnostic(replay, demo, instant, frames);
     }
 
     let whkdrc = cli.config.map_or_else(
