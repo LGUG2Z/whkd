@@ -9,7 +9,10 @@ use std::ops::Range;
 use std::path::Path;
 use std::path::PathBuf;
 use thiserror::Error;
+use whkd_core::Condition;
 use whkd_core::HotkeyBinding;
+use whkd_core::Layout;
+use whkd_core::Predicate;
 use whkd_core::Shell;
 use whkd_core::Whkdrc;
 
@@ -197,15 +200,20 @@ impl KeyValidator {
             return Some(valid);
         }
 
-        let max = (key.chars().count() / 3).max(1);
-
-        self.known
-            .iter()
-            .map(|name| (edit_distance(&key, name), name))
-            .filter(|(distance, _)| *distance <= max)
-            .min_by_key(|(distance, _)| *distance)
-            .map(|(_, name)| name.as_str())
+        closest(&key, self.known.iter().map(String::as_str))
     }
+}
+
+/// The candidate closest to `key`, if any is close enough to be a plausible typo
+fn closest<'a>(key: &str, candidates: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
+    let max = (key.chars().count() / 3).max(1);
+
+    candidates
+        .into_iter()
+        .map(|name| (edit_distance(key, name), name))
+        .filter(|(distance, _)| *distance <= max)
+        .min_by_key(|(distance, _)| *distance)
+        .map(|(_, name)| name)
 }
 
 /// Edit distance between `a` and `b`, counting a swap of adjacent characters as one edit
@@ -383,7 +391,7 @@ impl<'a> Cursor<'a> {
                     bindings.push(HotkeyBinding {
                         keys,
                         command,
-                        process_name: None,
+                        condition: Condition::Always,
                     });
                 }
                 _ => {
@@ -540,7 +548,7 @@ impl<'a> Cursor<'a> {
                 .with_note(open..open + 1, "`[` opened here"));
             }
 
-            let process_name = self.parse_process_name()?;
+            let condition = self.parse_condition()?;
             self.skip_inline();
             self.expect(':').map_err(|error| {
                 error.with_note(open..open + 1, "inside this `[` block; is a `]` missing?")
@@ -550,7 +558,7 @@ impl<'a> Cursor<'a> {
             mapped.push(HotkeyBinding {
                 keys: keys.to_vec(),
                 command,
-                process_name: Some(process_name),
+                condition,
             });
         }
 
@@ -558,27 +566,66 @@ impl<'a> Cursor<'a> {
             return Err(ParseError::new(
                 "empty app binding",
                 open..self.pos,
-                "expected at least one `process : command` entry",
+                "expected at least one `condition : command` entry",
             ));
         }
 
         Ok(mapped)
     }
 
-    /// One or more identifiers separated by whitespace, joined with a single space
-    fn parse_process_name(&mut self) -> Result<String, ParseError> {
+    /// `Default`, or one or more terms joined by `&`
+    fn parse_condition(&mut self) -> Result<Condition, ParseError> {
+        let start = self.pos;
+        let mut terms = vec![self.parse_term()?];
+
+        loop {
+            self.skip_inline();
+            if !self.eat('&') {
+                break;
+            }
+
+            self.skip_inline();
+            terms.push(self.parse_term()?);
+        }
+
+        let mut predicates = vec![];
+        let mut default = false;
+
+        for term in terms {
+            match term {
+                Term::Default => default = true,
+                Term::Predicate(predicate) => predicates.push(predicate),
+            }
+        }
+
+        match (default, predicates.is_empty()) {
+            (true, true) => Ok(Condition::Default),
+            (false, _) => Ok(Condition::Predicates(predicates)),
+            (true, false) => Err(ParseError::new(
+                "`Default` cannot be combined with other conditions",
+                start..self.pos,
+                "`Default` applies when nothing else matches",
+            )),
+        }
+    }
+
+    /// A bare process name, `Default`, or `app = ...` / `layout = ...` (also `!=`)
+    fn parse_term(&mut self) -> Result<Term, ParseError> {
         if !self.peek().is_some_and(is_ident_start) {
             return Err(ParseError::new(
-                format!("expected a process name, found {}", self.found()),
+                format!("expected a condition, found {}", self.found()),
                 self.here(),
-                "expected a process name (or `Default`) here",
+                "expected a process name, `Default`, `app = ...` or `layout = ...` here",
             ));
         }
 
+        let start = self.pos;
         let mut words = vec![];
+        let mut end;
 
         loop {
             words.push(self.take_while(is_ident_continue));
+            end = self.pos;
             self.skip_inline();
 
             if !self.peek().is_some_and(is_ident_start) {
@@ -586,7 +633,116 @@ impl<'a> Cursor<'a> {
             }
         }
 
-        Ok(words.join(" "))
+        let name = words.join(" ");
+
+        let negated = if self.rest().starts_with("!=") {
+            self.pos += 2;
+            true
+        } else if self.eat('=') {
+            false
+        } else {
+            return Ok(if name == "Default" {
+                Term::Default
+            } else {
+                Term::Predicate(Predicate::App {
+                    names: vec![name],
+                    negated: false,
+                })
+            });
+        };
+
+        let values = self.parse_values()?;
+
+        match name.as_str() {
+            "app" => Ok(Term::Predicate(Predicate::App {
+                names: values.into_iter().map(|(value, _)| value).collect(),
+                negated,
+            })),
+            "layout" => {
+                let layouts = values
+                    .into_iter()
+                    .map(|(value, span)| {
+                        Layout::parse(&value).ok_or_else(|| unknown_layout(&value, span))
+                    })
+                    .collect::<Result<_, _>>()?;
+
+                Ok(Term::Predicate(Predicate::Layout { layouts, negated }))
+            }
+            _ => {
+                let error = ParseError::new(
+                    format!("unknown condition `{name}`"),
+                    start..end,
+                    "expected `app` or `layout`",
+                );
+
+                Err(match closest(&name.to_lowercase(), ["app", "layout"]) {
+                    Some(suggestion) => error.with_help(format!("did you mean `{suggestion}`?")),
+                    None => error,
+                })
+            }
+        }
+    }
+
+    /// One or more values separated by `|`, each a run of words, with the span of each
+    fn parse_values(&mut self) -> Result<Vec<(String, Range<usize>)>, ParseError> {
+        let mut values = vec![];
+
+        loop {
+            self.skip_inline();
+            let start = self.pos;
+            let mut end = start;
+            let mut words = vec![];
+
+            while self.peek().is_some_and(is_value_char) {
+                words.push(self.take_while(is_value_char));
+                end = self.pos;
+                self.skip_inline();
+            }
+
+            if words.is_empty() {
+                return Err(ParseError::new(
+                    format!("expected a value, found {}", self.found()),
+                    self.here(),
+                    "expected a value here",
+                ));
+            }
+
+            values.push((words.join(" "), start..end));
+
+            if !self.eat('|') {
+                break;
+            }
+        }
+
+        Ok(values)
+    }
+}
+
+enum Term {
+    Default,
+    Predicate(Predicate),
+}
+
+fn is_value_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_' || c == '-' || c == '.'
+}
+
+fn unknown_layout(value: &str, span: Range<usize>) -> ParseError {
+    let error = ParseError::new(
+        format!("unknown layout `{value}`"),
+        span,
+        "not a built-in komorebi layout",
+    );
+
+    match closest(
+        &value.to_lowercase(),
+        Layout::ALL.into_iter().map(Layout::name),
+    ) {
+        Some(suggestion) => error.with_help(format!("did you mean `{suggestion}`?")),
+        None => error.with_help(format!(
+            "valid layouts: {}",
+            Layout::ALL.map(Layout::name).join(", ")
+        )),
     }
 }
 
@@ -608,7 +764,7 @@ alt + h : echo "Hello""#;
             bindings: vec![HotkeyBinding {
                 keys: vec![String::from("alt"), String::from("h")],
                 command: String::from("echo \"Hello\""),
-                process_name: None,
+                condition: Condition::Always,
             }],
             pause_binding: None,
             pause_hook: None,
@@ -632,7 +788,7 @@ alt + h : echo "Hello""#;
             bindings: vec![HotkeyBinding {
                 keys: vec![String::from("alt"), String::from("h")],
                 command: String::from("echo \"Hello\""),
-                process_name: None,
+                condition: Condition::Always,
             }],
             pause_binding: None,
             pause_hook: None,
@@ -679,12 +835,12 @@ alt + 1 : komorebic focus-workspace 0 # digits are fine in the hotkeys section
                     HotkeyBinding {
                         keys: vec![String::from("alt"), String::from("n")],
                         command: String::from(r#"echo "hello firefox""#),
-                        process_name: Option::from("Firefox".to_string()),
+                        condition: Condition::app("Firefox"),
                     },
                     HotkeyBinding {
                         keys: vec![String::from("alt"), String::from("n")],
                         command: String::from(r#"echo "hello chrome""#),
-                        process_name: Option::from("Google Chrome".to_string()),
+                        condition: Condition::app("Google Chrome"),
                     },
                 ],
             )],
@@ -692,27 +848,27 @@ alt + 1 : komorebic focus-workspace 0 # digits are fine in the hotkeys section
                 HotkeyBinding {
                     keys: vec![String::from("alt"), String::from("h")],
                     command: String::from("komorebic focus left"),
-                    process_name: None,
+                    condition: Condition::Always,
                 },
                 HotkeyBinding {
                     keys: vec![String::from("alt"), String::from("j")],
                     command: String::from("komorebic focus down"),
-                    process_name: None,
+                    condition: Condition::Always,
                 },
                 HotkeyBinding {
                     keys: vec![String::from("alt"), String::from("k")],
                     command: String::from("komorebic focus up"),
-                    process_name: None,
+                    condition: Condition::Always,
                 },
                 HotkeyBinding {
                     keys: vec![String::from("alt"), String::from("l")],
                     command: String::from("komorebic focus right"),
-                    process_name: None,
+                    condition: Condition::Always,
                 },
                 HotkeyBinding {
                     keys: vec![String::from("alt"), String::from("1")],
                     command: String::from("komorebic focus-workspace 0"),
-                    process_name: None,
+                    condition: Condition::Always,
                 },
             ],
             pause_binding: None,
@@ -737,7 +893,7 @@ f11 : echo "hello f11""#;
             bindings: vec![HotkeyBinding {
                 keys: vec![String::from("f11")],
                 command: String::from("echo \"hello f11\""),
-                process_name: None,
+                condition: Condition::Always,
             }],
             pause_binding: None,
             pause_hook: None,
@@ -769,29 +925,29 @@ alt + h : echo "Hello""#;
                     HotkeyBinding {
                         keys: vec![String::from("alt"), String::from("n")],
                         command: String::from(r#"echo "hello world""#),
-                        process_name: Option::from("Default".to_string()),
+                        condition: Condition::Default,
                     },
                     HotkeyBinding {
                         keys: vec![String::from("alt"), String::from("n")],
                         command: String::from(r#"echo "hello firefox""#),
-                        process_name: Option::from("Firefox".to_string()),
+                        condition: Condition::app("Firefox"),
                     },
                     HotkeyBinding {
                         keys: vec![String::from("alt"), String::from("n")],
                         command: String::from(r#"echo "hello chrome""#),
-                        process_name: Option::from("Google Chrome".to_string()),
+                        condition: Condition::app("Google Chrome"),
                     },
                     HotkeyBinding {
                         keys: vec![String::from("alt"), String::from("n")],
                         command: String::from("Ignore"),
-                        process_name: Option::from("Zen Browser".to_string()),
+                        condition: Condition::app("Zen Browser"),
                     },
                 ],
             )],
             bindings: vec![HotkeyBinding {
                 keys: vec![String::from("alt"), String::from("h")],
                 command: String::from(r#"echo "Hello""#),
-                process_name: None,
+                condition: Condition::Always,
             }],
             pause_binding: None,
             pause_hook: None,
@@ -815,7 +971,7 @@ alt + h : echo "Hello""#;
             bindings: vec![HotkeyBinding {
                 keys: vec![String::from("alt"), String::from("h")],
                 command: String::from(r#"echo "Hello""#),
-                process_name: None,
+                condition: Condition::Always,
             }],
             pause_binding: Some(vec![
                 "ctrl".to_string(),
@@ -844,7 +1000,7 @@ alt + h : echo "Hello""#;
             bindings: vec![HotkeyBinding {
                 keys: vec![String::from("alt"), String::from("h")],
                 command: String::from(r#"echo "Hello""#),
-                process_name: None,
+                condition: Condition::Always,
             }],
             pause_binding: Some(vec![
                 "ctrl".to_string(),
@@ -873,7 +1029,7 @@ alt + h : echo "Hello""#;
             bindings: vec![HotkeyBinding {
                 keys: vec![String::from("alt"), String::from("h")],
                 command: String::from(r#"echo "Hello""#),
-                process_name: None,
+                condition: Condition::Always,
             }],
             pause_binding: Some(vec![
                 "alt".to_string(),
@@ -909,12 +1065,15 @@ alt + h : echo "Hello""#;
     fn test_process_name_starting_with_default() {
         let src = ".shell cmd\nalt + n [\n DefaultApp : a\n Default : b\n]\nf1 : x";
         let output = parse(src).unwrap();
-        let names: Vec<_> = output.app_bindings[0]
+        let conditions: Vec<_> = output.app_bindings[0]
             .1
             .iter()
-            .map(|b| b.process_name.clone().unwrap())
+            .map(|b| b.condition.clone())
             .collect();
-        assert_eq!(names, vec!["DefaultApp", "Default"]);
+        assert_eq!(
+            conditions,
+            vec![Condition::app("DefaultApp"), Condition::Default]
+        );
     }
 
     #[test]
@@ -1067,5 +1226,137 @@ del : x",
         )
         .unwrap_err();
         assert_ne!(e.help.as_deref(), Some("did you mean `nonexistent`?"));
+    }
+
+    fn block(entries: &str) -> String {
+        format!(".shell cmd\nalt + n [\n{entries}\n]\nf1 : x")
+    }
+
+    fn conditions(entries: &str) -> Vec<Condition> {
+        parse(&block(entries)).unwrap().app_bindings[0]
+            .1
+            .iter()
+            .map(|b| b.condition.clone())
+            .collect()
+    }
+
+    fn layout(layouts: &[Layout], negated: bool) -> Predicate {
+        Predicate::Layout {
+            layouts: layouts.to_vec(),
+            negated,
+        }
+    }
+
+    fn app(names: &[&str], negated: bool) -> Predicate {
+        Predicate::App {
+            names: names.iter().map(ToString::to_string).collect(),
+            negated,
+        }
+    }
+
+    #[test]
+    fn test_app_forms_are_equivalent() {
+        assert_eq!(
+            conditions("Firefox : a\napp = Firefox : b\napp=Firefox:c"),
+            vec![Condition::app("Firefox"); 3]
+        );
+    }
+
+    #[test]
+    fn test_app_alternatives_and_spaces() {
+        assert_eq!(
+            conditions("app = Google Chrome | Zen Browser : a"),
+            vec![Condition::Predicates(vec![app(
+                &["Google Chrome", "Zen Browser"],
+                false
+            )])]
+        );
+    }
+
+    #[test]
+    fn test_layout_conditions() {
+        assert_eq!(
+            conditions(
+                "layout = bsp : a\nlayout = bsp | grid : b\nlayout != rows : c\nlayout = UltrawideVerticalStack : d"
+            ),
+            vec![
+                Condition::Predicates(vec![layout(&[Layout::Bsp], false)]),
+                Condition::Predicates(vec![layout(&[Layout::Bsp, Layout::Grid], false)]),
+                Condition::Predicates(vec![layout(&[Layout::Rows], true)]),
+                Condition::Predicates(vec![layout(&[Layout::UltrawideVerticalStack], false)]),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_combined_conditions() {
+        assert_eq!(
+            conditions("Firefox & layout = rows : a\napp != Code & layout != bsp : b"),
+            vec![
+                Condition::Predicates(vec![
+                    app(&["Firefox"], false),
+                    layout(&[Layout::Rows], false)
+                ]),
+                Condition::Predicates(vec![app(&["Code"], true), layout(&[Layout::Bsp], true)]),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_bare_process_named_like_a_predicate() {
+        assert_eq!(
+            conditions("layout : a\napp : b"),
+            vec![Condition::app("layout"), Condition::app("app")]
+        );
+    }
+
+    #[test]
+    fn test_default_may_come_first_in_the_file() {
+        assert_eq!(
+            conditions("Default : a\nlayout = bsp : b"),
+            vec![
+                Condition::Default,
+                Condition::Predicates(vec![layout(&[Layout::Bsp], false)])
+            ]
+        );
+    }
+
+    #[test]
+    fn test_error_unknown_layout() {
+        let src = block("layout = bsp | bpsp : a");
+        let e = parse(&src).unwrap_err();
+        assert_eq!(e.message, "unknown layout `bpsp`");
+        assert_eq!(&src[e.span.clone()], "bpsp");
+        assert_eq!(e.help.as_deref(), Some("did you mean `bsp`?"));
+    }
+
+    #[test]
+    fn test_error_unknown_layout_without_suggestion() {
+        let e = parse(&block("layout = zzzzzzzz : a")).unwrap_err();
+        assert!(e.help.unwrap().starts_with("valid layouts: bsp, columns"));
+    }
+
+    #[test]
+    fn test_error_unknown_condition() {
+        let src = block("layot = bsp : a");
+        let e = parse(&src).unwrap_err();
+        assert_eq!(e.message, "unknown condition `layot`");
+        assert_eq!(&src[e.span.clone()], "layot");
+        assert_eq!(e.help.as_deref(), Some("did you mean `layout`?"));
+    }
+
+    #[test]
+    fn test_error_default_combined() {
+        let e = parse(&block("Default & layout = bsp : a")).unwrap_err();
+        assert_eq!(
+            e.message,
+            "`Default` cannot be combined with other conditions"
+        );
+    }
+
+    #[test]
+    fn test_error_missing_value() {
+        let e = parse(&block("layout = : a")).unwrap_err();
+        assert!(e.message.starts_with("expected a value"));
     }
 }

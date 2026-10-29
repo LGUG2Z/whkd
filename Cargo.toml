@@ -25,6 +25,7 @@ color-eyre = "0.6"
 dirs = "6"
 lazy_static = "1"
 parking_lot = "0.12"
+uds_windows = "1"
 win-hotkeys = "0.5"
 
 [dependencies]
@@ -36,4 +37,5 @@ color-eyre.workspace = true
 dirs.workspace = true
 lazy_static.workspace = true
 parking_lot.workspace = true
+uds_windows.workspace = true
 win-hotkeys.workspace = true

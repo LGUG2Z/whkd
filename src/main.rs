@@ -13,12 +13,17 @@ use std::path::PathBuf;
 use std::process::ChildStdin;
 use std::process::Command;
 use std::process::Stdio;
+use whkd_core::select;
+use whkd_core::Condition;
 use whkd_core::HotkeyBinding;
 use whkd_core::Shell;
+use whkd_core::State;
 use whkd_core::Whkdrc;
 use win_hotkeys::error::WHKError;
 use win_hotkeys::HotkeyManager;
 use win_hotkeys::VKey;
+
+mod komorebi;
 
 lazy_static! {
     static ref WHKDRC: Whkdrc = {
@@ -119,7 +124,7 @@ pub struct HkmData {
     pub mod_keys: Vec<VKey>,
     pub vkey: VKey,
     pub command: String,
-    pub process_name: Option<String>,
+    pub condition: Condition,
 }
 
 impl HkmData {
@@ -183,7 +188,7 @@ impl TryFrom<&HotkeyBinding> for HkmData {
             mod_keys,
             vkey,
             command: value.command.clone(),
-            process_name: value.process_name.clone(),
+            condition: value.condition.clone(),
         })
     }
 }
@@ -205,6 +210,29 @@ enum SubCommand {
         /// Path to whkdrc (defaults to the usual lookup: $WHKD_CONFIG_HOME or ~/.config)
         path: Option<PathBuf>,
     },
+}
+
+/// The command to run for the entries bound to a key, given the current state
+fn select_command(entries: &[HkmData]) -> Option<String> {
+    let app_name = active_win_pos_rs::get_active_window()
+        .unwrap_or_default()
+        .app_name;
+
+    // only bother komorebi if a condition actually asks about it
+    let layout = if entries.iter().any(|e| e.condition.needs_layout()) {
+        komorebi::focused_workspace_layout()
+    } else {
+        None
+    };
+
+    let state = State {
+        app: &app_name,
+        layout,
+    };
+
+    select(entries.iter().map(|e| (&e.condition, &e.command)), &state)
+        .filter(|cmd| cmd.as_str() != "Ignore")
+        .cloned()
 }
 
 fn spawn_shell(shell: Shell) -> Result<()> {
@@ -344,78 +372,30 @@ fn main() -> Result<()> {
 
         let v = v.clone();
         hkm.register_hotkey(vkey, mod_keys, move || {
+            let Some(cmd) = select_command(&v) else {
+                return;
+            };
+
             let mut retry_with_new_session = false;
 
             if let Some(session_stdin) = SESSION_STDIN.lock().as_mut() {
-                let app_name = active_win_pos_rs::get_active_window()
-                    .unwrap_or_default()
-                    .app_name;
-
-                let mut matched_cmd = None;
-                let mut default_cmd = None;
-
-                for e in &v {
-                    let cmd = &e.command;
-
-                    if let Some(proc) = &e.process_name {
-                        if *proc == "Default" {
-                            default_cmd = Some(cmd.clone());
-                        }
-
-                        if app_name == *proc {
-                            matched_cmd = Some(cmd.clone());
-                        }
-                    }
+                if matches!(whkdrc.shell, Shell::Pwsh | Shell::Powershell) {
+                    println!("{cmd}");
                 }
 
-                match (matched_cmd, default_cmd) {
-                    (None, Some(cmd)) | (Some(cmd), _) if cmd != "Ignore" => {
-                        if matches!(whkdrc.shell, Shell::Pwsh | Shell::Powershell) {
-                            println!("{cmd}");
-                        }
-
-                        if writeln!(session_stdin, "{cmd}").is_err() {
-                            retry_with_new_session = true;
-                        }
-                    }
-                    (_, _) => {}
+                if writeln!(session_stdin, "{cmd}").is_err() {
+                    retry_with_new_session = true;
                 }
             }
 
             if retry_with_new_session && spawn_shell(whkdrc.shell).is_ok() {
                 if let Some(session_stdin) = SESSION_STDIN.lock().as_mut() {
-                    let app_name = active_win_pos_rs::get_active_window()
-                        .unwrap_or_default()
-                        .app_name;
-
-                    let mut matched_cmd = None;
-                    let mut default_cmd = None;
-
-                    for e in &v {
-                        let cmd = &e.command;
-
-                        if let Some(proc) = &e.process_name {
-                            if *proc == "Default" {
-                                default_cmd = Some(cmd.clone());
-                            }
-
-                            if app_name == *proc {
-                                matched_cmd = Some(cmd.clone());
-                            }
-                        }
+                    if matches!(whkdrc.shell, Shell::Pwsh | Shell::Powershell) {
+                        println!("{cmd}");
                     }
 
-                    match (matched_cmd, default_cmd) {
-                        (None, Some(cmd)) | (Some(cmd), _) if cmd != "Ignore" => {
-                            if matches!(whkdrc.shell, Shell::Pwsh | Shell::Powershell) {
-                                println!("{cmd}");
-                            }
-
-                            if writeln!(session_stdin, "{cmd}").is_err() {
-                                eprintln!("Unable to write to stdin session");
-                            }
-                        }
-                        (_, _) => {}
+                    if writeln!(session_stdin, "{cmd}").is_err() {
+                        eprintln!("Unable to write to stdin session");
                     }
                 }
             }

@@ -47,6 +47,32 @@ alt + j : komorebic focus down
 alt + k : komorebic focus up
 alt + l : komorebic focus right
 ```
+
+## Conditions
+
+Each line inside a `[ ... ]` block is a condition followed by a command. A bare process name is shorthand for
+`app = <name>`, so existing configuration files keep working. Conditions can also test the layout of the focused
+komorebi workspace:
+
+```
+alt + h [
+    layout = bsp | grid         : komorebic focus left
+    layout = columns            : komorebic cycle-focus previous
+    app = Firefox & layout != rows : komorebic focus up
+    Default                     : komorebic focus left
+]
+```
+
+- `app = a | b` and `layout = x | y` match any of the listed values, and `!=` negates them
+- `&` requires every condition on a line to hold
+- The first line that matches wins, and `Default` is only used if nothing else matches, wherever it appears
+- Layouts are komorebi's built-in ones: `bsp`, `columns`, `rows`, `vertical-stack`, `horizontal-stack`,
+  `ultrawide-vertical-stack`, `grid`, `right-main-vertical-stack` and `scrolling`. Custom layouts are not supported.
+- komorebi is only asked for its layout when a `layout` condition is in play for the key that was pressed. If komorebi
+  is not running, `layout` conditions do not match (including `!=`), and whkd prints a warning once
+
+`whkd validate` checks conditions, including layout names, without needing komorebi to be running.
+
 ## Valid Hotkeys
 The list of valid hotkeys can be found [here](https://docs.rs/win-hotkeys/latest/win_hotkeys/enum.VKey.html).
 
