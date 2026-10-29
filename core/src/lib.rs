@@ -234,8 +234,17 @@ pub enum SwipeDirection {
 /// A swipe of three or four fingers on a touchpad, which can trigger a binding like a mouse input
 /// can. Windows does not pass these on to programs, so whkd recognises them itself from the
 /// touchpad's raw input.
+///
+/// With a direction (`swipe3left`) a swipe runs its command once, when the swipe is recognised.
+/// Without one (`swipe3`) it is a stream: the command is started when the fingers land and is told
+/// how they move until they lift, which is what scrubbing needs and a command per movement could
+/// not keep up with.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum GestureInput {
+    /// Three fingers, as a stream
+    Swipe3,
+    /// Four fingers, as a stream
+    Swipe4,
     Swipe3Left,
     Swipe3Right,
     Swipe3Up,
@@ -247,7 +256,9 @@ pub enum GestureInput {
 }
 
 impl GestureInput {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 10] = [
+        Self::Swipe3,
+        Self::Swipe4,
         Self::Swipe3Left,
         Self::Swipe3Right,
         Self::Swipe3Up,
@@ -262,6 +273,8 @@ impl GestureInput {
     #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
+            Self::Swipe3 => "swipe3",
+            Self::Swipe4 => "swipe4",
             Self::Swipe3Left => "swipe3left",
             Self::Swipe3Right => "swipe3right",
             Self::Swipe3Up => "swipe3up",
@@ -285,27 +298,53 @@ impl GestureInput {
     #[must_use]
     pub const fn fingers(self) -> u8 {
         match self {
-            Self::Swipe3Left | Self::Swipe3Right | Self::Swipe3Up | Self::Swipe3Down => 3,
-            Self::Swipe4Left | Self::Swipe4Right | Self::Swipe4Up | Self::Swipe4Down => 4,
+            Self::Swipe3
+            | Self::Swipe3Left
+            | Self::Swipe3Right
+            | Self::Swipe3Up
+            | Self::Swipe3Down => 3,
+            Self::Swipe4
+            | Self::Swipe4Left
+            | Self::Swipe4Right
+            | Self::Swipe4Up
+            | Self::Swipe4Down => 4,
         }
     }
 
+    /// The way it moves, for a swipe that runs its command once. A stream has none: it follows the
+    /// fingers wherever they go
     #[must_use]
-    pub const fn direction(self) -> SwipeDirection {
+    pub const fn direction(self) -> Option<SwipeDirection> {
         match self {
-            Self::Swipe3Left | Self::Swipe4Left => SwipeDirection::Left,
-            Self::Swipe3Right | Self::Swipe4Right => SwipeDirection::Right,
-            Self::Swipe3Up | Self::Swipe4Up => SwipeDirection::Up,
-            Self::Swipe3Down | Self::Swipe4Down => SwipeDirection::Down,
+            Self::Swipe3 | Self::Swipe4 => None,
+            Self::Swipe3Left | Self::Swipe4Left => Some(SwipeDirection::Left),
+            Self::Swipe3Right | Self::Swipe4Right => Some(SwipeDirection::Right),
+            Self::Swipe3Up | Self::Swipe4Up => Some(SwipeDirection::Up),
+            Self::Swipe3Down | Self::Swipe4Down => Some(SwipeDirection::Down),
         }
     }
 
-    /// The gesture for `fingers` moving in `direction`, if that many fingers have one
+    /// Whether the command is started when the fingers land and told how they move, rather than
+    /// run once when the swipe is recognised
+    #[must_use]
+    pub const fn is_stream(self) -> bool {
+        self.direction().is_none()
+    }
+
+    /// The swipe for `fingers` moving in `direction`, if that many fingers have one
     #[must_use]
     pub fn swipe(fingers: u8, direction: SwipeDirection) -> Option<Self> {
         Self::ALL
             .into_iter()
-            .find(|input| input.fingers() == fingers && input.direction() == direction)
+            .find(|input| input.fingers() == fingers && input.direction() == Some(direction))
+    }
+
+    /// The stream for `fingers`, if that many fingers have one
+    #[must_use]
+    pub fn stream(fingers: u8) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|input| input.fingers() == fingers && input.is_stream())
     }
 }
 
@@ -511,9 +550,10 @@ mod tests {
         for not_a_gesture in [
             "",
             "swipe",
+            "swipe2",
             "swipe2left",
             "swipe5up",
-            "swipe3",
+            "swipe3 ",
             "swipe3left ",
             "wheelup",
         ] {
@@ -525,13 +565,17 @@ mod tests {
     fn a_gesture_is_its_fingers_and_its_direction() {
         for input in GestureInput::ALL {
             assert!(matches!(input.fingers(), 3 | 4), "{input}");
-            assert_eq!(
-                GestureInput::swipe(input.fingers(), input.direction()),
-                Some(input)
-            );
             assert!(input
                 .name()
                 .starts_with(&format!("swipe{}", input.fingers())));
+
+            match input.direction() {
+                Some(direction) => {
+                    assert!(!input.is_stream(), "{input}");
+                    assert_eq!(GestureInput::swipe(input.fingers(), direction), Some(input));
+                }
+                None => assert!(input.is_stream(), "{input}"),
+            }
         }
 
         // every number of fingers has all four directions, and no other number has any
@@ -550,6 +594,27 @@ mod tests {
         assert_eq!(
             GestureInput::swipe(4, SwipeDirection::Up),
             Some(GestureInput::Swipe4Up)
+        );
+    }
+
+    #[test]
+    fn a_stream_is_a_swipe_without_a_direction() {
+        assert_eq!(GestureInput::parse("swipe3"), Some(GestureInput::Swipe3));
+        assert_eq!(GestureInput::parse("SWIPE4"), Some(GestureInput::Swipe4));
+
+        let streams: Vec<_> = GestureInput::ALL
+            .into_iter()
+            .filter(|input| input.is_stream())
+            .collect();
+        assert_eq!(streams, vec![GestureInput::Swipe3, GestureInput::Swipe4]);
+
+        assert_eq!(GestureInput::stream(3), Some(GestureInput::Swipe3));
+        assert_eq!(GestureInput::stream(4), Some(GestureInput::Swipe4));
+        assert_eq!(GestureInput::stream(2), None);
+        // a stream is not one of the swipes that go one way
+        assert_eq!(
+            GestureInput::swipe(3, SwipeDirection::Left),
+            Some(GestureInput::Swipe3Left)
         );
     }
 

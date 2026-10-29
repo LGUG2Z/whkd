@@ -7,6 +7,8 @@
     ".wheel_cooldown"
   ],
   "gestures": [
+    "swipe3",
+    "swipe4",
     "swipe3left",
     "swipe3right",
     "swipe3up",
