@@ -1,0 +1,47 @@
+[graph]
+targets = [
+  "x86_64-pc-windows-msvc",
+  "i686-pc-windows-msvc",
+  "aarch64-pc-windows-msvc",
+]
+
+[licenses]
+allow = [
+  "0BSD",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-3-Clause",
+  "ISC",
+  "MIT",
+  "MPL-2.0",
+  "Unicode-3.0",
+  "Unlicense",
+  "Zlib",
+  "LicenseRef-PolyForm-Noncommercial-1.0.0",
+]
+confidence-threshold = 0.8
+
+[[licenses.clarify]]
+crate = "whkd"
+expression = "LicenseRef-PolyForm-Noncommercial-1.0.0"
+license-files = []
+
+[[licenses.clarify]]
+crate = "whkd-core"
+expression = "LicenseRef-PolyForm-Noncommercial-1.0.0"
+license-files = []
+
+[[licenses.clarify]]
+crate = "whkd-parser"
+expression = "LicenseRef-PolyForm-Noncommercial-1.0.0"
+license-files = []
+
+[[licenses.clarify]]
+crate = "whkd-keys"
+expression = "LicenseRef-PolyForm-Noncommercial-1.0.0"
+license-files = []
+
+[[licenses.clarify]]
+crate = "xtask"
+expression = "LicenseRef-PolyForm-Noncommercial-1.0.0"
+license-files = []
