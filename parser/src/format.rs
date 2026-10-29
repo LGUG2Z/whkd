@@ -832,4 +832,12 @@ alt + when : y
         assert!(parsed > 2_000, "only {parsed} mutations parsed");
         assert!(changed > 1_000, "only {changed} mutations were reformatted");
     }
+
+    #[test]
+    fn mouse_inputs_are_formatted_like_other_keys() {
+        check(
+            ".shell cmd\nAlt+WheelUp:x\nalt   +   xbutton1  when  layout=bsp:y\n",
+            ".shell cmd\nAlt + WheelUp                    : x\nalt + xbutton1 when layout = bsp : y\n",
+        );
+    }
 }

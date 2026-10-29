@@ -12,6 +12,7 @@ use thiserror::Error;
 use whkd_core::Condition;
 use whkd_core::HotkeyBinding;
 use whkd_core::Layout;
+use whkd_core::MouseInput;
 use whkd_core::Predicate;
 use whkd_core::Shell;
 use whkd_core::Whkdrc;
@@ -445,7 +446,7 @@ impl<'a> Cursor<'a> {
         let pause_binding = if self.at_keyword(PAUSE) {
             self.pos += PAUSE.len();
             self.skip_inline();
-            let keys = self.parse_hotkeys()?;
+            let keys = self.parse_hotkeys(false)?;
             self.skip_trivia();
             Some(keys)
         } else {
@@ -466,7 +467,7 @@ impl<'a> Cursor<'a> {
 
         while self.peek().is_some() {
             let start = self.pos;
-            let keys = self.parse_hotkeys()?;
+            let keys = self.parse_hotkeys(true)?;
             let keys_span = start..self.trimmed_end();
             self.skip_inline();
 
@@ -595,19 +596,26 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    fn parse_hotkeys(&mut self) -> Result<Vec<String>, ParseError> {
-        let mut keys = vec![self.parse_key()?];
+    /// The keys of a hotkey. Mouse inputs are allowed where `allow_mouse` is, which is wherever the
+    /// hotkey is not handed to the keyboard hook
+    fn parse_hotkeys(&mut self, allow_mouse: bool) -> Result<Vec<String>, ParseError> {
+        let mut keys = vec![];
+        let mut spans = vec![];
 
         loop {
+            let start = self.pos;
+            keys.push(self.parse_key()?);
+            spans.push(start..self.pos);
+
             self.skip_inline();
             if !self.eat(KEY_SEPARATOR) {
                 break;
             }
 
             self.skip_inline();
-            keys.push(self.parse_key()?);
         }
 
+        check_mouse_inputs(&keys, &spans, allow_mouse)?;
         Ok(keys)
     }
 
@@ -867,6 +875,54 @@ impl<'a> Cursor<'a> {
 enum Term {
     Default,
     Predicate(Predicate),
+}
+
+/// A mouse input triggers a binding, so it has to be the last key, and the primary buttons need a
+/// modifier or every click would be swallowed
+fn check_mouse_inputs(
+    keys: &[String],
+    spans: &[Range<usize>],
+    allow_mouse: bool,
+) -> Result<(), ParseError> {
+    for (index, key) in keys.iter().enumerate() {
+        let Some(input) = MouseInput::parse(key) else {
+            continue;
+        };
+        let span = spans[index].clone();
+
+        if !allow_mouse {
+            return Err(ParseError::new(
+                format!("`{input}` is a mouse input, which cannot be used here"),
+                span,
+                "expected a keyboard key",
+            )
+            .with_help(
+                "this hotkey is handled by the keyboard hook, so it has to be a keyboard key",
+            ));
+        }
+
+        if index + 1 != keys.len() {
+            return Err(ParseError::new(
+                format!("mouse input `{input}` must be the last key"),
+                span,
+                "this is what triggers the binding",
+            )
+            .with_help(format!(
+                "the keys before the last one are held down: `alt + {input}`"
+            )));
+        }
+
+        if input.requires_modifier() && keys.len() == 1 {
+            return Err(ParseError::new(
+                format!("`{input}` needs a modifier"),
+                span,
+                "this would swallow every click",
+            )
+            .with_help(format!("bind it with a modifier, such as `alt + {input}`")));
+        }
+    }
+
+    Ok(())
 }
 
 enum EntryKind {
@@ -1833,5 +1889,66 @@ del : x",
         let rendered = w[0].report("whkdrc", src, false);
         assert!(rendered.contains("Warning"), "{rendered}");
         assert!(rendered.contains("this one is used instead"), "{rendered}");
+    }
+
+    #[test]
+    fn test_mouse_inputs_are_triggers() {
+        let src = ".shell cmd\nalt + wheelup : a\nAlt + Shift + MButton : b\nalt + xbutton1 when layout = scrolling : c\nalt + wheeldown [\n Firefox : d\n Default : e\n]\nwheelleft : f\n";
+        let output = parse(src).unwrap();
+        assert_eq!(output.bindings[0].keys, vec!["alt", "wheelup"]);
+        assert_eq!(output.bindings[1].keys, vec!["Alt", "Shift", "MButton"]);
+        assert_eq!(output.app_bindings.len(), 2);
+        // not primary buttons, so no modifier is needed
+        assert_eq!(output.bindings[2].keys, vec!["wheelleft"]);
+    }
+
+    #[test]
+    fn test_error_mouse_input_must_be_last() {
+        let src = ".shell cmd\nwheelup + alt : x\n";
+        let e = err(src);
+        assert_eq!(e.message, "mouse input `wheelup` must be the last key");
+        assert_eq!(&src[e.span.clone()], "wheelup");
+
+        let e = err(".shell cmd\nalt + lbutton + h : x\n");
+        assert_eq!(e.message, "mouse input `lbutton` must be the last key");
+    }
+
+    #[test]
+    fn test_error_primary_buttons_need_a_modifier() {
+        for button in ["lbutton", "RButton"] {
+            let src = format!(".shell cmd\n{button} : x\n");
+            let e = err(&src);
+            assert!(e.message.ends_with("needs a modifier"), "{}", e.message);
+            assert_eq!(&src[e.span.clone()], button);
+            assert!(e.help.unwrap().contains("alt +"));
+
+            // in a block, and in a guard, too
+            assert!(parse(&format!(
+                ".shell cmd\nf1 : y\n{button} [\n Firefox : x\n]\n"
+            ))
+            .is_err());
+            assert!(parse(&format!(".shell cmd\nf1 : y\n{button} when Firefox : x\n")).is_err());
+        }
+
+        // with a modifier they are fine
+        assert!(parse(".shell cmd\nalt + lbutton : x\n").is_ok());
+    }
+
+    #[test]
+    fn test_error_pause_cannot_be_a_mouse_input() {
+        let src = ".shell cmd\n.pause alt + mbutton\nf1 : x\n";
+        let e = err(src);
+        assert!(e.message.contains("mouse input"), "{}", e.message);
+        assert_eq!(&src[e.span.clone()], "mbutton");
+    }
+
+    #[test]
+    fn test_mouse_input_lints_see_through_spelling() {
+        // the same hotkey written two ways is still a duplicate default
+        let src = ".shell cmd\nAlt + WheelUp : a\nalt + wheelup : b\n";
+        assert_eq!(
+            messages(src),
+            vec!["`Alt + WheelUp` already has a default command"]
+        );
     }
 }

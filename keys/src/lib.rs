@@ -3,6 +3,7 @@
 //! This is the one place that knows them, so `whkd` (to flag typos with a suggestion) and the
 //! editor grammar generator (to highlight keys, and modifiers separately) cannot disagree.
 
+use whkd_core::MouseInput;
 use whkd_parser::KeyValidator;
 use win_hotkeys::VKey;
 
@@ -12,7 +13,7 @@ const ALIASES: [&str; 9] = [
 ];
 
 /// Names people commonly try that are not valid, and the valid name to suggest instead
-pub const SYNONYMS: [(&str, &str); 13] = [
+pub const SYNONYMS: [(&str, &str); 25] = [
     ("enter", "return"),
     ("esc", "escape"),
     ("del", "delete"),
@@ -26,12 +27,24 @@ pub const SYNONYMS: [(&str, &str); 13] = [
     ("super", "win"),
     ("windows", "win"),
     ("option", "alt"),
+    ("scrollup", "wheelup"),
+    ("scroll_up", "wheelup"),
+    ("scrolldown", "wheeldown"),
+    ("scroll_down", "wheeldown"),
+    ("mouse1", "lbutton"),
+    ("leftclick", "lbutton"),
+    ("mouse2", "rbutton"),
+    ("rightclick", "rbutton"),
+    ("mouse3", "mbutton"),
+    ("middleclick", "mbutton"),
+    ("mouse4", "xbutton1"),
+    ("mouse5", "xbutton2"),
 ];
 
-/// Whether `win-hotkeys` accepts `name` as a key
+/// Whether `name` is a key `win-hotkeys` accepts, or a mouse input whkd handles itself
 #[must_use]
 pub fn is_valid(name: &str) -> bool {
-    VKey::from_keyname(name).is_ok()
+    MouseInput::parse(name).is_some() || VKey::from_keyname(name).is_ok()
 }
 
 /// Whether `name` is a modifier (shift, ctrl, alt or win, either side)
@@ -66,6 +79,7 @@ pub fn names() -> Vec<String> {
                 .filter(|name| is_valid(name))
                 .map(String::from),
         )
+        .chain(MouseInput::ALL.map(|input| input.name().to_string()))
         .collect();
 
     names.sort();
@@ -127,5 +141,29 @@ mod tests {
             assert!(!is_valid(synonym), "{synonym} is already valid");
             assert!(is_valid(valid), "{valid} is not valid");
         }
+    }
+
+    #[test]
+    fn mouse_inputs_are_keys_but_not_modifiers() {
+        for input in MouseInput::ALL {
+            assert!(is_valid(input.name()), "{input}");
+            assert!(is_valid(&input.name().to_uppercase()), "{input}");
+            assert!(names().iter().any(|n| n == input.name()), "{input}");
+            assert!(!is_modifier(input.name()), "{input}");
+        }
+    }
+
+    #[test]
+    fn a_misspelt_mouse_input_gets_a_suggestion() {
+        let keys = validator();
+        let help = |name: &str| {
+            let src = format!(".shell cmd\nalt + {name} : x\n");
+            whkd_parser::parse_with(&src, &keys).unwrap_err().help
+        };
+
+        assert_eq!(help("scrollup").as_deref(), Some("did you mean `wheelup`?"));
+        assert_eq!(help("mouse3").as_deref(), Some("did you mean `mbutton`?"));
+        // a transposition is a typo, not a synonym
+        assert_eq!(help("whelup").as_deref(), Some("did you mean `wheelup`?"));
     }
 }

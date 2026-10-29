@@ -1046,6 +1046,7 @@ version = "0.2.10"
 name = "whkd-keys"
 version = "0.2.10"
 dependencies = [
+ "whkd-core",
  "whkd-parser",
  "win-hotkeys",
 ]
