@@ -343,6 +343,49 @@ enum SubCommand {
         #[clap(long)]
         check: bool,
     },
+    /// Show what the touchpad's fingers do, as a command bound to swipe3 or swipe4 would be told
+    Touchpad,
+}
+
+/// Say which precision touchpads there are, and then what the fingers on them do, in the lines a
+/// stream binding's command is given. The lines go to the standard output, and the rest to the
+/// standard error, so that redirecting the output records a gesture that can be replayed
+fn touchpad_diagnostic() -> Result<()> {
+    let touchpads = touchpad::device::find_touchpads();
+    eprintln!("{} precision touchpad(s) found", touchpads.len());
+    for touchpad in &touchpads {
+        eprintln!(
+            "{}
+  {}",
+            touchpad.name,
+            touchpad::device::describe(touchpad)
+        );
+    }
+
+    if touchpads.is_empty() {
+        eprintln!("Waiting for one to be connected.");
+    }
+
+    eprintln!("Put three or four fingers on the touchpad. Press Ctrl+C to stop.");
+    eprintln!("Lines are written as a command bound to swipe3 or swipe4 would be given them,");
+    eprintln!("and `swipe ...` lines are what a swipe with a direction would run once.");
+
+    touchpad::device::start_with(
+        |output, _modifiers, pad| match touchpad::protocol::encode(&output, pad) {
+            Some(line) => println!("{line}"),
+            None => {
+                if let touchpad::recogniser::Output::Swipe(gesture) = output {
+                    println!("swipe {gesture}");
+                }
+            }
+        },
+        win_hotkeys::HotkeyManager::<()>::new().pause_handle(),
+        touchpad::recogniser::Thresholds::default(),
+    )?;
+
+    loop {
+        std::thread::park();
+    }
 }
 
 /// The command to run for the entries bound to a key, given the current state
@@ -447,6 +490,10 @@ fn main() -> Result<()> {
 
     if let Some(SubCommand::Fmt { path, write, check }) = cli.command {
         return fmt(path.or(cli.config), write, check);
+    }
+
+    if let Some(SubCommand::Touchpad) = cli.command {
+        return touchpad_diagnostic();
     }
 
     let whkdrc = cli.config.map_or_else(

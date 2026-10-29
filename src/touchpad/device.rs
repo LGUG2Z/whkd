@@ -527,6 +527,19 @@ pub fn start(
     paused: PauseHandle,
     thresholds: Thresholds,
 ) -> Result<()> {
+    start_with(
+        move |output, modifiers, pad| dispatcher.handle(output, modifiers, pad),
+        paused,
+        thresholds,
+    )
+}
+
+/// Listen for touchpads, and hand what the fingers do to `sink`, on a thread of its own
+pub fn start_with(
+    mut sink: impl FnMut(Output, Modifiers, Option<Pad>) + Send + 'static,
+    paused: PauseHandle,
+    thresholds: Thresholds,
+) -> Result<()> {
     let (queue, messages) = mpsc::channel::<Message>();
 
     SHARED
@@ -541,7 +554,7 @@ pub fn start(
 
     thread::spawn(move || {
         for message in messages {
-            dispatcher.handle(message.output, message.modifiers, message.pad);
+            sink(message.output, message.modifiers, message.pad);
         }
     });
 
@@ -613,10 +626,21 @@ pub fn start(
     Ok(())
 }
 
-/// Used by tools that read the touchpad without acting on it
-#[allow(dead_code)]
-pub fn handle_of(info: &TouchpadInfo) -> HANDLE {
-    handle(info.handle)
+/// What a touchpad reports about itself, in a line for a person to read
+#[must_use]
+pub fn describe(touchpad: &TouchpadInfo) -> String {
+    match Description::read(handle(touchpad.handle)) {
+        Ok(description) => {
+            let pad = description.calibration.pad();
+            format!(
+                "{} finger slots, {:.1} x {:.1} cm",
+                description.fingers.len(),
+                pad.width_cm,
+                pad.height_cm
+            )
+        }
+        Err(reason) => format!("cannot be used for gestures: {reason}"),
+    }
 }
 
 #[cfg(test)]
@@ -633,15 +657,7 @@ mod tests {
 
         for pad in &found {
             println!("{}", pad.name);
-            match Description::read(handle(pad.handle)) {
-                Ok(description) => println!(
-                    "  {} finger slots, {:.1} x {:.1} cm",
-                    description.fingers.len(),
-                    description.calibration.pad().width_cm,
-                    description.calibration.pad().height_cm
-                ),
-                Err(reason) => println!("  cannot be used for gestures: {reason}"),
-            }
+            println!("  {}", describe(pad));
         }
     }
 }
