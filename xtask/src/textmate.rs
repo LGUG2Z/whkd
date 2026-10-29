@@ -139,6 +139,13 @@ pub fn grammar(vocabulary: &Vocabulary) -> Value {
                         alternation(&vocabulary.mouse_inputs)
                     )
                 },
+                {
+                    "name": "constant.character.key.gesture.whkdrc",
+                    "match": format!(
+                        "(?i:{BEFORE_WORD}(?:{}){AFTER_WORD})",
+                        alternation(&vocabulary.gestures)
+                    )
+                },
                 { "name": "constant.character.key.whkdrc", "match": key }
             ]
         }),

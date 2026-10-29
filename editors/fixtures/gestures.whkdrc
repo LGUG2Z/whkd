@@ -1,0 +1,15 @@
+.shell pwsh
+.gesture_cooldown 300
+
+# a stream: the command is started when the fingers land, and told how they move
+swipe3 : komorebic pan --stream
+alt + swipe4 when layout = scrolling : komorebic pan --stream
+
+# once, when the swipe happens
+swipe3left : komorebic focus left
+Swipe3Right : komorebic focus right
+alt + swipe4up : komorebic toggle-monocle
+swipe3down [
+    app = Firefox : echo only in firefox
+    Default       : echo everywhere else
+]

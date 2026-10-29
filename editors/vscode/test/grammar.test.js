@@ -313,6 +313,28 @@ test('mouse inputs are highlighted as keys of their own', async () => {
   assertNotScope(keyboard, 'h', 'constant.character.key.mouse');
 });
 
+test('gestures are highlighted as keys of their own', async () => {
+  const lines = await fixture('gestures.whkdrc');
+
+  const stream = lineWith(lines, 'komorebic pan --stream');
+  assertScope(stream, 'swipe3', 'constant.character.key.gesture');
+
+  const guarded = lineWith(lines, 'alt + swipe4 when');
+  assertScope(guarded, 'alt', 'keyword.other.modifier');
+  assertScope(guarded, 'swipe4', 'constant.character.key.gesture');
+  assertScope(guarded, 'when', 'keyword.control.when');
+
+  assertScope(lineWith(lines, 'komorebic focus left'), 'swipe3left', 'constant.character.key.gesture');
+  assertScope(lineWith(lines, 'komorebic focus right'), 'Swipe3Right', 'constant.character.key.gesture');
+  assertScope(lineWith(lines, 'toggle-monocle'), 'swipe4up', 'constant.character.key.gesture');
+  assertScope(lineWith(lines, 'swipe3down ['), 'swipe3down', 'constant.character.key.gesture');
+
+  // a gesture is not a mouse input, and a mouse input is not a gesture
+  assertNotScope(stream, 'swipe3', 'constant.character.key.mouse');
+  const wheel = lineWith(await fixture('mouse.whkdrc'), 'komorebic focus left');
+  assertNotScope(wheel, 'wheelup', 'constant.character.key.gesture');
+});
+
 test('mistakes are marked invalid, like the parser rejects them', async () => {
   const layouts = await fixture('invalid/unknown-layout.whkdrc');
   assertScope(lineWith(layouts, 'a typo'), 'bpsp', 'invalid.illegal.unknown-layout');
@@ -338,7 +360,7 @@ test('without a valid .shell the commands are plain strings', async () => {
 });
 
 test('valid fixtures contain nothing marked invalid', async () => {
-  for (const name of ['basic', 'blocks', 'when', 'cmd', 'tricky', 'mouse']) {
+  for (const name of ['basic', 'blocks', 'when', 'cmd', 'tricky', 'mouse', 'gestures']) {
     const lines = await fixture(`${name}.whkdrc`);
     for (const line of lines) {
       for (const tok of line) {

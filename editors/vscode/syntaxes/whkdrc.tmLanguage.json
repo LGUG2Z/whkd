@@ -404,6 +404,10 @@
           "name": "constant.character.key.mouse.whkdrc"
         },
         {
+          "match": "(?i:(?<![\\p{L}\\p{N}_])(?:swipe3right|swipe4right|swipe3left|swipe3down|swipe4left|swipe4down|swipe3up|swipe4up|swipe3|swipe4)(?![\\p{L}\\p{N}_]))",
+          "name": "constant.character.key.gesture.whkdrc"
+        },
+        {
           "match": "(?:[\\p{L}_][\\p{L}\\p{N}_]*|[0-9]+)",
           "name": "constant.character.key.whkdrc"
         }
