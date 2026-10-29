@@ -31,6 +31,9 @@ use win_hotkeys::VKey;
 
 mod komorebi;
 mod mouse;
+// the touchpad is read in the next revisions; until then only its tests use this
+#[allow(dead_code)]
+mod touchpad;
 
 lazy_static! {
     static ref WHKDRC: Whkdrc = {
