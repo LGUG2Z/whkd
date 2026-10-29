@@ -974,6 +974,7 @@ dependencies = [
  "parking_lot",
  "uds_windows",
  "whkd-core",
+ "whkd-keys",
  "whkd-parser",
  "win-hotkeys",
 ]
@@ -981,6 +982,14 @@ dependencies = [
 [[package]]
 name = "whkd-core"
 version = "0.2.10"
+
+[[package]]
+name = "whkd-keys"
+version = "0.2.10"
+dependencies = [
+ "whkd-parser",
+ "win-hotkeys",
+]
 
 [[package]]
 name = "whkd-parser"

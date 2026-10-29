@@ -8,7 +8,7 @@ edition.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [workspace]
-members = ["core", "parser"]
+members = ["core", "keys", "parser"]
 
 [workspace.package]
 version = "0.2.10"
@@ -17,6 +17,7 @@ edition = "2021"
 
 [workspace.dependencies]
 whkd-core = { version = "0.2.8", path = "core" }
+whkd-keys = { path = "keys" }
 whkd-parser = { version = "0.2.8", path = "parser" }
 active-win-pos-rs = "0.9"
 ariadne = "0.6"
@@ -30,6 +31,7 @@ win-hotkeys = "0.5"
 
 [dependencies]
 whkd-core.workspace = true
+whkd-keys.workspace = true
 whkd-parser.workspace = true
 active-win-pos-rs.workspace = true
 clap.workspace = true

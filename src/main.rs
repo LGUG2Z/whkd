@@ -165,32 +165,7 @@ fn validate(path: Option<PathBuf>) -> Result<()> {
 
 /// Key names whkd accepts, used to flag typos in the whkdrc
 fn key_validator() -> whkd_parser::KeyValidator {
-    let mut known: Vec<String> = (0..=255)
-        .map(|code| VKey::from_vk_code(code).to_string())
-        .filter_map(|name| name.strip_prefix("VK_").map(str::to_lowercase))
-        .filter(|name| VKey::from_keyname(name).is_ok())
-        .collect();
-
-    known.extend(["alt", "ctrl", "win"].map(String::from));
-    known.sort();
-    known.dedup();
-
-    whkd_parser::KeyValidator::new(|name| VKey::from_keyname(name).is_ok(), known).with_synonyms(&[
-        ("enter", "return"),
-        ("esc", "escape"),
-        ("del", "delete"),
-        ("backspace", "back"),
-        ("pgup", "prior"),
-        ("pageup", "prior"),
-        ("pgdn", "next"),
-        ("pagedown", "next"),
-        ("caps", "capital"),
-        ("capslock", "capital"),
-        ("super", "win"),
-        ("windows", "win"),
-        ("option", "alt"),
-        ("control", "ctrl"),
-    ])
+    whkd_keys::validator()
 }
 
 #[derive(Debug, Clone)]
