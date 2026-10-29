@@ -23,8 +23,9 @@ pub struct Frame {
     pub contacts: Vec<Contact>,
 }
 
+#[cfg(test)]
 impl Frame {
-    /// A frame, for tests and tools: `fingers` are `(id, x, y)`, all confident
+    /// A frame for tests: `fingers` are `(id, x, y)`, all confident
     #[must_use]
     pub fn new(time: Duration, fingers: &[(u32, f64, f64)]) -> Self {
         Self {

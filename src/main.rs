@@ -31,8 +31,6 @@ use win_hotkeys::VKey;
 
 mod komorebi;
 mod mouse;
-// the touchpad is read in the next revisions; until then only its tests use this
-#[allow(dead_code)]
 mod touchpad;
 
 lazy_static! {
@@ -555,11 +553,31 @@ fn main() -> Result<()> {
         data.register(&mut hkm, whkdrc.shell)?;
     }
 
+    // the touchpad is only listened to if there is a gesture to look out for
     if !gestures.is_empty() {
-        eprintln!(
-            "Touchpad gestures are not active in this build, ignoring {} gesture binding(s)",
-            gestures.len()
+        let dispatcher = touchpad::dispatch::Dispatcher::new(
+            gestures
+                .into_iter()
+                .map(|(key, entries)| (key, Arc::new(entries))),
+            whkdrc.shell,
+            |entries| select_command(entries),
+            {
+                let shell = whkdrc.shell;
+                move |cmd| run_command(shell, cmd)
+            },
         );
+
+        if touchpad::device::find_touchpads().is_empty() {
+            eprintln!(
+                "No precision touchpad was found, so gesture bindings will not fire until one is connected"
+            );
+        }
+
+        touchpad::device::start(
+            dispatcher,
+            hkm.pause_handle(),
+            touchpad::recogniser::Thresholds::default(),
+        )?;
     }
 
     // the hook that listens for the mouse is only started if there is something to listen for
