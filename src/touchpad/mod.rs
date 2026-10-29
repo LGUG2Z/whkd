@@ -8,4 +8,5 @@
 pub mod frame;
 pub mod protocol;
 pub mod recogniser;
+pub mod report;
 pub mod stream;
