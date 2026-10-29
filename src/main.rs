@@ -324,7 +324,7 @@ fn select_command(entries: &[HkmData]) -> Option<String> {
     };
 
     select(entries.iter().map(|e| (&e.condition, &e.command)), &state)
-        .filter(|cmd| cmd.as_str() != "Ignore")
+        .filter(|cmd| cmd.as_str() != whkd_parser::syntax::IGNORE)
         .cloned()
 }
 

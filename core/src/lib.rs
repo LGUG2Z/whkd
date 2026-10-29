@@ -17,6 +17,24 @@ pub enum Shell {
     Pwsh,
 }
 
+impl Shell {
+    pub const ALL: [Self; 3] = [Self::Cmd, Self::Pwsh, Self::Powershell];
+
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Cmd => "cmd",
+            Self::Powershell => "powershell",
+            Self::Pwsh => "pwsh",
+        }
+    }
+
+    #[must_use]
+    pub fn parse(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|shell| shell.name() == name)
+    }
+}
+
 #[allow(clippy::fallible_impl_from)]
 impl From<String> for Shell {
     fn from(value: String) -> Self {
@@ -31,11 +49,7 @@ impl From<String> for Shell {
 
 impl Display for Shell {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Cmd => write!(f, "cmd"),
-            Self::Powershell => write!(f, "powershell"),
-            Self::Pwsh => write!(f, "pwsh"),
-        }
+        write!(f, "{}", self.name())
     }
 }
 

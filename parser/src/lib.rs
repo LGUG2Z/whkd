@@ -16,6 +16,30 @@ use whkd_core::Predicate;
 use whkd_core::Shell;
 use whkd_core::Whkdrc;
 
+pub mod syntax;
+
+use syntax::is_ident_continue;
+use syntax::is_ident_start;
+use syntax::is_value_char;
+use syntax::AND;
+use syntax::APP;
+use syntax::BLOCK_CLOSE;
+use syntax::BLOCK_OPEN;
+use syntax::COMMENT;
+use syntax::DEFAULT;
+use syntax::DELIMITER;
+use syntax::DIRECTIVES;
+use syntax::EQUALS;
+use syntax::KEY_SEPARATOR;
+use syntax::LAYOUT;
+use syntax::NOT_EQUALS;
+use syntax::OR;
+use syntax::PAUSE;
+use syntax::PAUSE_HOOK;
+use syntax::PREDICATES;
+use syntax::SHELL;
+use syntax::WHEN;
+
 pub mod format;
 
 #[derive(Debug, Error)]
@@ -318,14 +342,6 @@ fn edit_distance(a: &str, b: &str) -> usize {
     d[a.len()][b.len()]
 }
 
-fn is_ident_start(c: char) -> bool {
-    c.is_alphabetic() || c == '_'
-}
-
-fn is_ident_continue(c: char) -> bool {
-    c.is_alphanumeric() || c == '_'
-}
-
 struct Cursor<'a> {
     src: &'a str,
     pos: usize,
@@ -368,7 +384,7 @@ impl<'a> Cursor<'a> {
     fn skip_trivia(&mut self) {
         loop {
             self.take_while(|c| c.is_whitespace() || c == '\u{feff}');
-            if self.peek() == Some('#') {
+            if self.peek() == Some(COMMENT) {
                 self.take_while(|c| c != '\n');
             } else {
                 break;
@@ -426,8 +442,8 @@ impl<'a> Cursor<'a> {
         let shell = self.parse_shell()?;
         self.skip_trivia();
 
-        let pause_binding = if self.at_keyword(".pause") {
-            self.pos += ".pause".len();
+        let pause_binding = if self.at_keyword(PAUSE) {
+            self.pos += PAUSE.len();
             self.skip_inline();
             let keys = self.parse_hotkeys()?;
             self.skip_trivia();
@@ -436,8 +452,8 @@ impl<'a> Cursor<'a> {
             None
         };
 
-        let pause_hook = if self.at_keyword(".pause_hook") {
-            self.pos += ".pause_hook".len();
+        let pause_hook = if self.at_keyword(PAUSE_HOOK) {
+            self.pos += PAUSE_HOOK.len();
             let command = self.parse_command();
             self.skip_trivia();
             Some(command)
@@ -454,10 +470,10 @@ impl<'a> Cursor<'a> {
             let keys_span = start..self.trimmed_end();
             self.skip_inline();
 
-            if self.peek() == Some('[') {
+            if self.peek() == Some(BLOCK_OPEN) {
                 let mapped = self.parse_app_binding(&keys)?;
                 app_bindings.push((keys, mapped));
-            } else if self.peek() == Some(':') {
+            } else if self.peek() == Some(DELIMITER) {
                 self.pos += 1;
                 let command = self.parse_command();
                 self.entries
@@ -467,8 +483,8 @@ impl<'a> Cursor<'a> {
                     command,
                     condition: Condition::Always,
                 });
-            } else if self.at_keyword("when") {
-                self.pos += "when".len();
+            } else if self.at_keyword(WHEN) {
+                self.pos += WHEN.len();
                 self.skip_inline();
 
                 let condition_start = self.pos;
@@ -483,7 +499,7 @@ impl<'a> Cursor<'a> {
                 }
 
                 self.skip_inline();
-                self.expect(':')?;
+                self.expect(DELIMITER)?;
                 let command = self.parse_command();
 
                 self.entries.push(Entry::new(
@@ -539,7 +555,7 @@ impl<'a> Cursor<'a> {
     }
 
     fn parse_shell(&mut self) -> Result<Shell, ParseError> {
-        if !self.at_keyword(".shell") {
+        if !self.at_keyword(SHELL) {
             return Err(ParseError::new(
                 "missing `.shell` directive",
                 self.here(),
@@ -548,15 +564,15 @@ impl<'a> Cursor<'a> {
             .with_help("start your whkdrc with e.g. `.shell pwsh`"));
         }
 
-        self.pos += ".shell".len();
+        self.pos += SHELL.len();
         self.skip_inline();
 
         let start = self.pos;
-        match self.take_while(is_ident_continue) {
-            "pwsh" => Ok(Shell::Pwsh),
-            "powershell" => Ok(Shell::Powershell),
-            "cmd" => Ok(Shell::Cmd),
-            other => {
+        let word = self.take_while(is_ident_continue);
+        match Shell::parse(word) {
+            Some(shell) => Ok(shell),
+            None => {
+                let other = word;
                 let span = if other.is_empty() {
                     self.here()
                 } else {
@@ -570,7 +586,10 @@ impl<'a> Cursor<'a> {
                         format!("unknown shell `{other}`")
                     },
                     span,
-                    "expected one of: cmd | pwsh | powershell",
+                    format!(
+                        "expected one of: {}",
+                        Shell::ALL.map(Shell::name).join(" | ")
+                    ),
                 ))
             }
         }
@@ -581,7 +600,7 @@ impl<'a> Cursor<'a> {
 
         loop {
             self.skip_inline();
-            if !self.eat('+') {
+            if !self.eat(KEY_SEPARATOR) {
                 break;
             }
 
@@ -606,9 +625,12 @@ impl<'a> Cursor<'a> {
                 );
 
                 return Err(if found == Some('.') {
-                    error.with_help(
-                        "directives (`.shell`, `.pause`, `.pause_hook`) must come first, in that order",
-                    )
+                    error.with_help(format!(
+                        "directives ({}) must come first, in that order",
+                        DIRECTIVES
+                            .map(|directive| format!("`{directive}`"))
+                            .join(", ")
+                    ))
                 } else {
                     error
                 });
@@ -629,7 +651,7 @@ impl<'a> Cursor<'a> {
     fn parse_command(&mut self) -> String {
         self.skip_inline();
 
-        let command = self.take_while(|c| c != '\n' && c != '#').trim_end();
+        let command = self.take_while(|c| c != '\n' && c != COMMENT).trim_end();
         if command.is_empty() {
             let span = self.here();
             self.warnings.push(
@@ -651,7 +673,7 @@ impl<'a> Cursor<'a> {
         loop {
             self.skip_trivia();
 
-            if self.eat(']') {
+            if self.eat(BLOCK_CLOSE) {
                 break;
             }
 
@@ -668,7 +690,7 @@ impl<'a> Cursor<'a> {
             let condition = self.parse_condition()?;
             let condition_span = condition_start..self.trimmed_end();
             self.skip_inline();
-            self.expect(':').map_err(|error| {
+            self.expect(DELIMITER).map_err(|error| {
                 error.with_note(open..open + 1, "inside this `[` block; is a `]` missing?")
             })?;
             let command = self.parse_command();
@@ -704,7 +726,7 @@ impl<'a> Cursor<'a> {
 
         loop {
             self.skip_inline();
-            if !self.eat('&') {
+            if !self.eat(AND) {
                 break;
             }
 
@@ -759,13 +781,13 @@ impl<'a> Cursor<'a> {
 
         let name = words.join(" ");
 
-        let negated = if self.rest().starts_with("!=") {
-            self.pos += 2;
+        let negated = if self.rest().starts_with(NOT_EQUALS) {
+            self.pos += NOT_EQUALS.len();
             true
-        } else if self.eat('=') {
+        } else if self.eat(EQUALS) {
             false
         } else {
-            return Ok(if name == "Default" {
+            return Ok(if name == DEFAULT {
                 Term::Default
             } else {
                 Term::Predicate(Predicate::App {
@@ -778,11 +800,11 @@ impl<'a> Cursor<'a> {
         let values = self.parse_values()?;
 
         match name.as_str() {
-            "app" => Ok(Term::Predicate(Predicate::App {
+            APP => Ok(Term::Predicate(Predicate::App {
                 names: values.into_iter().map(|(value, _)| value).collect(),
                 negated,
             })),
-            "layout" => {
+            LAYOUT => {
                 let layouts = values
                     .into_iter()
                     .map(|(value, span)| {
@@ -799,7 +821,7 @@ impl<'a> Cursor<'a> {
                     "expected `app` or `layout`",
                 );
 
-                Err(match closest(&name.to_lowercase(), ["app", "layout"]) {
+                Err(match closest(&name.to_lowercase(), PREDICATES) {
                     Some(suggestion) => error.with_help(format!("did you mean `{suggestion}`?")),
                     None => error,
                 })
@@ -833,7 +855,7 @@ impl<'a> Cursor<'a> {
 
             values.push((words.join(" "), start..end));
 
-            if !self.eat('|') {
+            if !self.eat(OR) {
                 break;
             }
         }
@@ -1023,10 +1045,6 @@ fn set_implies<T: PartialEq>(
         (false, true) => given.iter().all(|x| !needed.contains(x)),
         (true, false) => false,
     }
-}
-
-fn is_value_char(c: char) -> bool {
-    c.is_alphanumeric() || c == '_' || c == '-' || c == '.'
 }
 
 fn unknown_layout(value: &str, span: Range<usize>) -> ParseError {

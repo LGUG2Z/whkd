@@ -9,6 +9,13 @@
 //! (for example two constructs on one line), is returned untouched.
 
 use crate::parse;
+use crate::syntax::is_ident_continue;
+use crate::syntax::is_ident_start;
+use crate::syntax::is_value_char;
+use crate::syntax::PAUSE;
+use crate::syntax::PAUSE_HOOK;
+use crate::syntax::SHELL;
+use crate::syntax::WHEN;
 
 /// Format the contents of a whkdrc. Input that does not parse is returned unchanged
 #[must_use]
@@ -207,8 +214,8 @@ fn classify(text: &str, in_block: bool) -> Option<Item> {
         return lx.binding(lhs);
     }
 
-    if lx.keyword(".shell") {
-        lx.rest = &lx.rest[".shell".len()..];
+    if lx.keyword(SHELL) {
+        lx.rest = &lx.rest[SHELL.len()..];
         lx.skip_inline();
         let shell = lx.take_while(is_ident_continue);
         if shell.is_empty() {
@@ -216,29 +223,29 @@ fn classify(text: &str, in_block: bool) -> Option<Item> {
         }
 
         return Some(Item::Directive {
-            content: format!(".shell {shell}"),
+            content: format!("{SHELL} {shell}"),
             comment: lx.tail()?,
         });
     }
 
-    if lx.keyword(".pause") {
-        lx.rest = &lx.rest[".pause".len()..];
+    if lx.keyword(PAUSE) {
+        lx.rest = &lx.rest[PAUSE.len()..];
         lx.skip_inline();
         let keys = lx.hotkeys()?;
 
         return Some(Item::Directive {
-            content: format!(".pause {keys}"),
+            content: format!("{PAUSE} {keys}"),
             comment: lx.tail()?,
         });
     }
 
-    if lx.keyword(".pause_hook") {
-        lx.rest = &lx.rest[".pause_hook".len()..];
+    if lx.keyword(PAUSE_HOOK) {
+        lx.rest = &lx.rest[PAUSE_HOOK.len()..];
         let (command, comment) = lx.command();
         let content = if command.is_empty() {
-            String::from(".pause_hook")
+            String::from(PAUSE_HOOK)
         } else {
-            format!(".pause_hook {command}")
+            format!("{PAUSE_HOOK} {command}")
         };
 
         return Some(Item::Directive { content, comment });
@@ -253,26 +260,14 @@ fn classify(text: &str, in_block: bool) -> Option<Item> {
         });
     }
 
-    if lx.keyword("when") {
-        lx.rest = &lx.rest["when".len()..];
+    if lx.keyword(WHEN) {
+        lx.rest = &lx.rest[WHEN.len()..];
         lx.skip_inline();
         let condition = lx.condition()?;
         return lx.binding(format!("{keys} when {condition}"));
     }
 
     lx.binding(keys)
-}
-
-fn is_ident_start(c: char) -> bool {
-    c.is_alphabetic() || c == '_'
-}
-
-fn is_ident_continue(c: char) -> bool {
-    c.is_alphanumeric() || c == '_'
-}
-
-fn is_value_char(c: char) -> bool {
-    c.is_alphanumeric() || c == '_' || c == '-' || c == '.'
 }
 
 /// A cursor over one line, following the rules of the parser
