@@ -171,6 +171,26 @@ they do with a mouse. A trackpad scrolls in small steps, so they are added up, a
 notch (120 units) of scrolling in one direction. What is left over counts towards the next one, and counting starts
 again after half a second without scrolling, when the direction changes, or when the modifiers change.
 
+### Cooldown
+
+A trackpad keeps scrolling for a moment after the fingers lift, so one flick could fire a binding such as
+`cycle-workspace next` several times. After a wheel binding fires, scrolling in the same direction is ignored for a
+cooldown, 100 milliseconds unless the whkdrc says otherwise. It is set with a directive, after the other directives:
+
+```
+.shell pwsh
+.pause alt + p
+.wheel_cooldown 200 # milliseconds, 0 turns it off
+```
+
+- It counts from the moment the binding fired, so scrolling that carries on still fires every so often, rather than
+  never again
+- What is scrolled during the cooldown is forgotten, and still swallowed
+- Scrolling the other way, and the other wheel (sideways), have their own cooldown, so reversing is never held back
+- It applies to the wheel only: a button fires once for each press
+- It is a single setting for all wheel bindings. A mouse wheel that clicks in steps may want it lower or off, a trackpad
+  higher
+
 Gestures with three or four fingers (swipes, taps) are not something Windows passes on to programs. Windows Settings
 can map them to keyboard shortcuts, and whkd can bind those.
 

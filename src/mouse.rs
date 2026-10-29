@@ -132,6 +132,8 @@ pub enum Decision<T> {
 struct Wheel {
     accumulated: i32,
     last: Option<Instant>,
+    /// When a binding last fired, and whether that was for positive deltas (up, or right)
+    fired: Option<(Instant, bool)>,
 }
 
 /// The bindings, and the little state that deciding about a stream of events needs
@@ -141,15 +143,22 @@ pub struct Handler<T> {
     /// Buttons whose press was swallowed, so that the release is too and the application never sees
     /// a release without a press
     swallowed: HashSet<MouseInput>,
+    /// How long a wheel binding ignores scrolling in the direction it fired for, once it has
+    /// fired
+    cooldown: Duration,
     vertical: Wheel,
     horizontal: Wheel,
 }
 
 impl<T: Clone> Handler<T> {
-    pub fn new(bindings: impl IntoIterator<Item = ((MouseInput, Modifiers), T)>) -> Self {
+    pub fn new(
+        bindings: impl IntoIterator<Item = ((MouseInput, Modifiers), T)>,
+        cooldown: Duration,
+    ) -> Self {
         Self {
             bindings: bindings.into_iter().collect(),
             swallowed: HashSet::new(),
+            cooldown,
             vertical: Wheel::default(),
             horizontal: Wheel::default(),
         }
@@ -191,6 +200,9 @@ impl<T: Clone> Handler<T> {
             (true, false) => MouseInput::WheelLeft,
         };
 
+        let cooldown = self.cooldown;
+        let positive = delta > 0;
+
         let wheel = if horizontal {
             &mut self.horizontal
         } else {
@@ -202,6 +214,18 @@ impl<T: Clone> Handler<T> {
             *wheel = Wheel::default();
             return Decision::Pass;
         };
+
+        // just after a firing, scrolling the same way is swallowed and forgotten, so that a trackpad
+        // that carries on scrolling after the fingers lift does not fire the binding again and
+        // again. The cooldown counts from the firing, not from the last event, or momentum that
+        // never stopped would never let the binding fire again
+        if let Some((fired_at, fired_positive)) = wheel.fired {
+            if fired_positive == positive && now.saturating_duration_since(fired_at) < cooldown {
+                wheel.accumulated = 0;
+                wheel.last = Some(now);
+                return Decision::Swallow;
+            }
+        }
 
         let idle = wheel
             .last
@@ -217,6 +241,7 @@ impl<T: Clone> Handler<T> {
         // one firing per notch, and the rest is kept for the next event
         if wheel.accumulated.abs() >= WHEEL_DELTA {
             wheel.accumulated -= WHEEL_DELTA * wheel.accumulated.signum();
+            wheel.fired = Some((now, positive));
             Decision::Fire(binding.clone())
         } else {
             Decision::Swallow
@@ -331,6 +356,7 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
 pub fn start(
     bindings: impl IntoIterator<Item = ((MouseInput, Modifiers), Entries)>,
     paused: PauseHandle,
+    cooldown: Duration,
     allow_injected: bool,
     on_fire: impl Fn(Entries) + Send + 'static,
 ) -> Result<()> {
@@ -338,7 +364,7 @@ pub fn start(
 
     SHARED
         .set(Shared {
-            handler: Mutex::new(Handler::new(bindings)),
+            handler: Mutex::new(Handler::new(bindings, cooldown)),
             fire,
             paused,
             allow_injected,
@@ -380,17 +406,20 @@ mod tests {
     const ALT: Modifiers = Modifiers::ALT;
 
     fn handler() -> Handler<&'static str> {
-        Handler::new([
-            ((MouseInput::WheelUp, ALT), "up"),
-            ((MouseInput::WheelDown, ALT), "down"),
-            ((MouseInput::WheelRight, ALT), "right"),
-            ((MouseInput::MButton, ALT), "middle"),
-            (
-                (MouseInput::LButton, ALT.union(Modifiers::SHIFT)),
-                "shift-left",
-            ),
-            ((MouseInput::XButton1, Modifiers::NONE), "back"),
-        ])
+        Handler::new(
+            [
+                ((MouseInput::WheelUp, ALT), "up"),
+                ((MouseInput::WheelDown, ALT), "down"),
+                ((MouseInput::WheelRight, ALT), "right"),
+                ((MouseInput::MButton, ALT), "middle"),
+                (
+                    (MouseInput::LButton, ALT.union(Modifiers::SHIFT)),
+                    "shift-left",
+                ),
+                ((MouseInput::XButton1, Modifiers::NONE), "back"),
+            ],
+            Duration::ZERO,
+        )
     }
 
     fn wheel(delta: i32) -> Event {
@@ -656,7 +685,7 @@ mod tests {
 
     #[test]
     fn an_empty_handler_passes_everything() {
-        let mut h: Handler<&str> = Handler::new([]);
+        let mut h: Handler<&str> = Handler::new([], Duration::ZERO);
         let now = Instant::now();
 
         assert_eq!(h.handle(wheel(120), ALT, now), Decision::Pass);
@@ -794,6 +823,7 @@ mod tests {
                 ),
             ],
             HotkeyManager::<()>::new().pause_handle(),
+            Duration::ZERO,
             true,
             move |entries| fired.send(entries[0].command.clone()).unwrap(),
         )
@@ -811,5 +841,106 @@ mod tests {
 
         // the release of the button is swallowed with its press, so that is one firing, not two
         assert!(seen.recv_timeout(Duration::from_millis(300)).is_err());
+    }
+
+    fn with_cooldown(milliseconds: u64) -> Handler<&'static str> {
+        Handler::new(
+            [
+                ((MouseInput::WheelUp, ALT), "up"),
+                ((MouseInput::WheelDown, ALT), "down"),
+                ((MouseInput::WheelRight, ALT), "right"),
+            ],
+            Duration::from_millis(milliseconds),
+        )
+    }
+
+    #[test]
+    fn momentum_after_a_firing_does_not_fire_again() {
+        let mut h = with_cooldown(100);
+        let start = Instant::now();
+        let at = |ms| start + Duration::from_millis(ms);
+
+        assert_eq!(h.handle(wheel(120), ALT, at(0)), Decision::Fire("up"));
+        for ms in [10, 50, 99] {
+            assert_eq!(h.handle(wheel(120), ALT, at(ms)), Decision::Swallow, "{ms}");
+        }
+        // over, so scrolling counts again
+        assert_eq!(h.handle(wheel(120), ALT, at(100)), Decision::Fire("up"));
+    }
+
+    #[test]
+    fn what_is_scrolled_during_the_cooldown_is_forgotten() {
+        let mut h = with_cooldown(100);
+        let start = Instant::now();
+        let at = |ms| start + Duration::from_millis(ms);
+
+        assert_eq!(h.handle(wheel(120), ALT, at(0)), Decision::Fire("up"));
+        assert_eq!(h.handle(wheel(100), ALT, at(50)), Decision::Swallow);
+        // without forgetting, 100 + 100 would be a notch
+        assert_eq!(h.handle(wheel(100), ALT, at(110)), Decision::Swallow);
+        assert_eq!(h.handle(wheel(30), ALT, at(120)), Decision::Fire("up"));
+    }
+
+    #[test]
+    fn the_cooldown_counts_from_the_firing_not_from_the_last_event() {
+        let mut h = with_cooldown(100);
+        let start = Instant::now();
+        let at = |ms| start + Duration::from_millis(ms);
+
+        // scrolling that never stops still fires now and then
+        assert_eq!(h.handle(wheel(120), ALT, at(0)), Decision::Fire("up"));
+        assert_eq!(h.handle(wheel(120), ALT, at(60)), Decision::Swallow);
+        assert_eq!(h.handle(wheel(120), ALT, at(120)), Decision::Fire("up"));
+    }
+
+    #[test]
+    fn the_other_direction_and_the_other_wheel_are_not_held_back() {
+        let mut h = with_cooldown(100);
+        let now = Instant::now();
+
+        assert_eq!(h.handle(wheel(120), ALT, now), Decision::Fire("up"));
+        assert_eq!(h.handle(wheel(-120), ALT, now), Decision::Fire("down"));
+        assert_eq!(
+            h.handle(
+                Event::Wheel {
+                    horizontal: true,
+                    delta: 120
+                },
+                ALT,
+                now
+            ),
+            Decision::Fire("right")
+        );
+        // but the same direction again is
+        assert_eq!(h.handle(wheel(-120), ALT, now), Decision::Swallow);
+    }
+
+    #[test]
+    fn a_cooldown_of_zero_turns_it_off() {
+        let mut h = with_cooldown(0);
+        let now = Instant::now();
+
+        assert_eq!(h.handle(wheel(120), ALT, now), Decision::Fire("up"));
+        assert_eq!(h.handle(wheel(120), ALT, now), Decision::Fire("up"));
+    }
+
+    #[test]
+    fn the_cooldown_does_not_touch_buttons_or_unbound_scrolling() {
+        let mut h = Handler::new(
+            [
+                ((MouseInput::WheelUp, ALT), "up"),
+                ((MouseInput::MButton, ALT), "middle"),
+            ],
+            Duration::from_secs(10),
+        );
+        let now = Instant::now();
+
+        assert_eq!(h.handle(wheel(120), ALT, now), Decision::Fire("up"));
+        assert_eq!(
+            h.handle(Event::ButtonDown(MouseInput::MButton), ALT, now),
+            Decision::Fire("middle")
+        );
+        // not bound, so not ours, cooldown or not
+        assert_eq!(h.handle(wheel(-120), ALT, now), Decision::Pass);
     }
 }

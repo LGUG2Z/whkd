@@ -15,6 +15,7 @@ use std::process::ChildStdin;
 use std::process::Command;
 use std::process::Stdio;
 use std::sync::Arc;
+use std::time::Duration;
 use whkd_core::select;
 use whkd_core::Condition;
 use whkd_core::HotkeyBinding;
@@ -22,6 +23,7 @@ use whkd_core::MouseInput;
 use whkd_core::Shell;
 use whkd_core::State;
 use whkd_core::Whkdrc;
+use whkd_core::DEFAULT_WHEEL_COOLDOWN_MS;
 use win_hotkeys::error::WHKError;
 use win_hotkeys::HotkeyManager;
 use win_hotkeys::VKey;
@@ -529,6 +531,9 @@ fn main() -> Result<()> {
                 .into_iter()
                 .map(|(key, entries)| (key, Arc::new(entries))),
             hkm.pause_handle(),
+            Duration::from_millis(u64::from(
+                whkdrc.wheel_cooldown.unwrap_or(DEFAULT_WHEEL_COOLDOWN_MS),
+            )),
             false,
             move |entries| {
                 if let Some(cmd) = select_command(&entries) {
