@@ -7,5 +7,5 @@ edition.workspace = true
 
 [dependencies]
 whkd-core.workspace = true
-chumsky.workspace = true
+ariadne.workspace = true
 thiserror = "2"

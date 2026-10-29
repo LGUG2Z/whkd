@@ -2,6 +2,7 @@
 #![allow(clippy::missing_errors_doc, clippy::redundant_pub_crate)]
 
 use clap::Parser;
+use clap::Subcommand;
 use color_eyre::eyre::eyre;
 use color_eyre::eyre::Result;
 use lazy_static::lazy_static;
@@ -21,25 +22,96 @@ use win_hotkeys::VKey;
 
 lazy_static! {
     static ref WHKDRC: Whkdrc = {
-        // config file defaults to `~/.config/whkdrc`, or `<WHKD_CONFIG_HOME>/whkdrc`
-        let mut home  = std::env::var("WHKD_CONFIG_HOME").map_or_else(
-            |_| dirs::home_dir().expect("no home directory found").join(".config"),
-            |home_path| {
-                let home = PathBuf::from(&home_path);
-
-                if home.as_path().is_dir() {
-                    home
-                } else {
-                    panic!(
-                        "$Env:WHKD_CONFIG_HOME is set to '{home_path}', which is not a valid directory",
-                    );
-                }
-            },
-        );
-        home.push("whkdrc");
-        whkd_parser::load(&home).unwrap_or_else(|_| panic!("could not load whkdrc from {home:?}"))
+        let home = default_config_path().unwrap_or_else(|error| panic!("{error}"));
+        whkd_parser::load_with(&home, &key_validator()).unwrap_or_else(|error| {
+            eprintln!("{error}");
+            std::process::exit(1)
+        })
     };
     static ref SESSION_STDIN: Mutex<Option<ChildStdin>> = Mutex::new(None);
+}
+
+/// The config file defaults to `~/.config/whkdrc`, or `<WHKD_CONFIG_HOME>/whkdrc`
+fn default_config_path() -> Result<PathBuf> {
+    let mut home = match std::env::var("WHKD_CONFIG_HOME") {
+        Ok(home_path) => {
+            let home = PathBuf::from(&home_path);
+
+            if !home.as_path().is_dir() {
+                return Err(eyre!(
+                    "$Env:WHKD_CONFIG_HOME is set to '{home_path}', which is not a valid directory",
+                ));
+            }
+
+            home
+        }
+        Err(_) => dirs::home_dir()
+            .ok_or_else(|| eyre!("no home directory found"))?
+            .join(".config"),
+    };
+
+    home.push("whkdrc");
+    Ok(home)
+}
+
+/// Check that a whkdrc parses and only uses valid key names, printing a report if it does not
+fn validate(path: Option<PathBuf>) -> Result<()> {
+    let path = match path {
+        Some(path) => path,
+        None => default_config_path()?,
+    };
+
+    if !path.is_file() {
+        eprintln!("{}: no such file", path.display());
+        std::process::exit(1);
+    }
+
+    match whkd_parser::load_with(&path, &key_validator()) {
+        Ok(whkdrc) => {
+            let app_bindings: usize = whkdrc.app_bindings.iter().map(|(_, v)| v.len()).sum();
+            println!(
+                "{}: ok ({} bindings, {app_bindings} app-specific bindings, shell: {})",
+                path.display(),
+                whkdrc.bindings.len(),
+                whkdrc.shell,
+            );
+            Ok(())
+        }
+        Err(error) => {
+            eprintln!("{error}");
+            std::process::exit(1)
+        }
+    }
+}
+
+/// Key names whkd accepts, used to flag typos in the whkdrc
+fn key_validator() -> whkd_parser::KeyValidator {
+    let mut known: Vec<String> = (0..=255)
+        .map(|code| VKey::from_vk_code(code).to_string())
+        .filter_map(|name| name.strip_prefix("VK_").map(str::to_lowercase))
+        .filter(|name| VKey::from_keyname(name).is_ok())
+        .collect();
+
+    known.extend(["alt", "ctrl", "win"].map(String::from));
+    known.sort();
+    known.dedup();
+
+    whkd_parser::KeyValidator::new(|name| VKey::from_keyname(name).is_ok(), known).with_synonyms(&[
+        ("enter", "return"),
+        ("esc", "escape"),
+        ("del", "delete"),
+        ("backspace", "back"),
+        ("pgup", "prior"),
+        ("pageup", "prior"),
+        ("pgdn", "next"),
+        ("pagedown", "next"),
+        ("caps", "capital"),
+        ("capslock", "capital"),
+        ("super", "win"),
+        ("windows", "win"),
+        ("option", "alt"),
+        ("control", "ctrl"),
+    ])
 }
 
 #[derive(Debug, Clone)]
@@ -122,6 +194,17 @@ struct Cli {
     /// Path to whkdrc
     #[clap(action, short, long)]
     config: Option<PathBuf>,
+    #[clap(subcommand)]
+    command: Option<SubCommand>,
+}
+
+#[derive(Subcommand)]
+enum SubCommand {
+    /// Check a whkdrc for syntax errors and invalid key names without starting the daemon
+    Validate {
+        /// Path to whkdrc (defaults to the usual lookup: $WHKD_CONFIG_HOME or ~/.config)
+        path: Option<PathBuf>,
+    },
 }
 
 fn spawn_shell(shell: Shell) -> Result<()> {
@@ -170,11 +253,17 @@ fn main() -> Result<()> {
     color_eyre::install()?;
     let cli = Cli::parse();
 
+    if let Some(SubCommand::Validate { path }) = cli.command {
+        return validate(path.or(cli.config));
+    }
+
     let whkdrc = cli.config.map_or_else(
         || WHKDRC.clone(),
         |config| {
-            whkd_parser::load(&config)
-                .unwrap_or_else(|_| panic!("could not load whkdrc from {config:?}"))
+            whkd_parser::load_with(&config, &key_validator()).unwrap_or_else(|error| {
+                eprintln!("{error}");
+                std::process::exit(1)
+            })
         },
     );
 

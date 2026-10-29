@@ -9,6 +9,10 @@ variable `WHKD_CONFIG_HOME`.
 If you are compiling from the `master` branch, a `--config` flag is also available, which, when used, overrides the
 `WHKD_CONFIG_HOME` environment variable. This flag will be made available in v0.1.3+.
 
+You can check a configuration file for syntax errors and invalid key names without starting the daemon by running
+`whkd validate`, which uses the default lookup described above, or `whkd validate path\to\whkdrc` for an explicit path.
+It exits with a non-zero status if the file is not valid.
+
 The format of the configuration file (and this project itself) is heavily inspired by `skhd` and `sxhkd`.
 
 ## Example
