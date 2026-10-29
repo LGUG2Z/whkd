@@ -10,6 +10,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use thiserror::Error;
 use whkd_core::Condition;
+use whkd_core::GestureInput;
 use whkd_core::HotkeyBinding;
 use whkd_core::Layout;
 use whkd_core::MouseInput;
@@ -695,18 +696,21 @@ impl<'a> Cursor<'a> {
         let Some(is_modifier) = &validator.is_modifier else {
             return Ok(());
         };
-        let Some(input) = MouseInput::parse(last) else {
+        let Some(input) = PointerInput::parse(last) else {
             return Ok(());
         };
 
         let held = &keys[..keys.len() - 1];
         match held.iter().zip(spans).find(|(key, _)| !is_modifier(key)) {
             Some((key, span)) => Err(ParseError::new(
-                format!("`{key}` cannot be held down with `{input}`"),
+                format!("`{key}` cannot be held down with `{}`", input.name()),
                 span.clone(),
                 "not a modifier",
             )
-            .with_help("only alt, ctrl, shift and win can be used with a mouse input")),
+            .with_help(format!(
+                "only alt, ctrl, shift and win can be used with a {}",
+                input.kind()
+            ))),
             None => Ok(()),
         }
     }
@@ -969,22 +973,62 @@ enum Term {
     Predicate(Predicate),
 }
 
-/// A mouse input triggers a binding, so it has to be the last key, and the primary buttons need a
-/// modifier or every click would be swallowed
+/// Something that is not a keyboard key but can trigger a binding: a mouse button or scroll
+/// direction, or a swipe on a touchpad
+#[derive(Debug, Copy, Clone)]
+enum PointerInput {
+    Mouse(MouseInput),
+    Gesture(GestureInput),
+}
+
+impl PointerInput {
+    fn parse(key: &str) -> Option<Self> {
+        MouseInput::parse(key)
+            .map(Self::Mouse)
+            .or_else(|| GestureInput::parse(key).map(Self::Gesture))
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Mouse(input) => input.name(),
+            Self::Gesture(input) => input.name(),
+        }
+    }
+
+    /// What to call it in a message
+    fn kind(self) -> &'static str {
+        match self {
+            Self::Mouse(_) => "mouse input",
+            Self::Gesture(_) => "gesture",
+        }
+    }
+
+    /// Only the primary mouse buttons: swallowing every click would leave no way to fix the config
+    fn requires_modifier(self) -> bool {
+        match self {
+            Self::Mouse(input) => input.requires_modifier(),
+            Self::Gesture(_) => false,
+        }
+    }
+}
+
+/// A mouse input or a gesture triggers a binding, so it has to be the last key, and the primary
+/// buttons need a modifier or every click would be swallowed
 fn check_mouse_inputs(
     keys: &[String],
     spans: &[Range<usize>],
     allow_mouse: bool,
 ) -> Result<(), ParseError> {
     for (index, key) in keys.iter().enumerate() {
-        let Some(input) = MouseInput::parse(key) else {
+        let Some(input) = PointerInput::parse(key) else {
             continue;
         };
+        let (name, kind) = (input.name(), input.kind());
         let span = spans[index].clone();
 
         if !allow_mouse {
             return Err(ParseError::new(
-                format!("`{input}` is a mouse input, which cannot be used here"),
+                format!("`{name}` is a {kind}, which cannot be used here"),
                 span,
                 "expected a keyboard key",
             )
@@ -995,22 +1039,22 @@ fn check_mouse_inputs(
 
         if index + 1 != keys.len() {
             return Err(ParseError::new(
-                format!("mouse input `{input}` must be the last key"),
+                format!("{kind} `{name}` must be the last key"),
                 span,
                 "this is what triggers the binding",
             )
             .with_help(format!(
-                "the keys before the last one are held down: `alt + {input}`"
+                "the keys before the last one are held down: `alt + {name}`"
             )));
         }
 
         if input.requires_modifier() && keys.len() == 1 {
             return Err(ParseError::new(
-                format!("`{input}` needs a modifier"),
+                format!("`{name}` needs a modifier"),
                 span,
                 "this would swallow every click",
             )
-            .with_help(format!("bind it with a modifier, such as `alt + {input}`")));
+            .with_help(format!("bind it with a modifier, such as `alt + {name}`")));
         }
     }
 
@@ -2136,5 +2180,56 @@ alt + h + wheelup : x
         // once, and in its place among the directives
         assert!(parse(".shell cmd\n.wheel_cooldown 1\n.wheel_cooldown 2\nf1 : x\n").is_err());
         assert!(parse(".shell cmd\n.wheel_cooldown 1\n.pause alt + p\nf1 : x\n").is_err());
+    }
+
+    #[test]
+    fn test_gestures_are_triggers() {
+        let src = ".shell cmd\nswipe3left : a\nAlt + Swipe4Up : b\nalt + swipe3down when layout = scrolling : c\nswipe3right [\n Firefox : d\n Default : e\n]\n";
+        let output = parse(src).unwrap();
+        assert_eq!(output.bindings[0].keys, vec!["swipe3left"]);
+        assert_eq!(output.bindings[1].keys, vec!["Alt", "Swipe4Up"]);
+        assert_eq!(output.app_bindings.len(), 2);
+    }
+
+    #[test]
+    fn test_error_gesture_must_be_last() {
+        let src = ".shell cmd\nswipe3left + alt : x\n";
+        let e = err(src);
+        assert_eq!(e.message, "gesture `swipe3left` must be the last key");
+        assert_eq!(&src[e.span.clone()], "swipe3left");
+    }
+
+    #[test]
+    fn test_error_pause_cannot_be_a_gesture() {
+        let src = ".shell cmd\n.pause alt + swipe4up\nf1 : x\n";
+        let e = err(src);
+        assert_eq!(
+            e.message,
+            "`swipe4up` is a gesture, which cannot be used here"
+        );
+        assert_eq!(&src[e.span.clone()], "swipe4up");
+    }
+
+    #[test]
+    fn test_only_modifiers_can_be_held_with_a_gesture() {
+        let keys = KeyValidator::new(|_| true, vec![]).with_modifiers(|key| key == "alt");
+
+        let src = ".shell cmd\nalt + h + swipe3up : x\n";
+        let e = parse_with(src, &keys).unwrap_err();
+        assert_eq!(e.message, "`h` cannot be held down with `swipe3up`");
+        assert_eq!(
+            e.help.as_deref(),
+            Some("only alt, ctrl, shift and win can be used with a gesture")
+        );
+        assert!(parse_with(".shell cmd\nalt + swipe3up : x\n", &keys).is_ok());
+    }
+
+    #[test]
+    fn test_gestures_do_not_need_a_modifier() {
+        // unlike the primary mouse buttons, they cannot lock anyone out
+        for gesture in whkd_core::GestureInput::ALL {
+            let src = format!(".shell cmd\n{gesture} : x\n");
+            assert!(parse(&src).is_ok(), "{gesture}");
+        }
     }
 }

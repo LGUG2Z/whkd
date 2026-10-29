@@ -6,6 +6,16 @@
     ".pause_hook",
     ".wheel_cooldown"
   ],
+  "gestures": [
+    "swipe3left",
+    "swipe3right",
+    "swipe3up",
+    "swipe3down",
+    "swipe4left",
+    "swipe4right",
+    "swipe4up",
+    "swipe4down"
+  ],
   "keys": [
     "0",
     "1",

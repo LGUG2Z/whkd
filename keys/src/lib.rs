@@ -3,6 +3,7 @@
 //! This is the one place that knows them, so `whkd` (to flag typos with a suggestion) and the
 //! editor grammar generator (to highlight keys, and modifiers separately) cannot disagree.
 
+use whkd_core::GestureInput;
 use whkd_core::MouseInput;
 use whkd_parser::KeyValidator;
 use win_hotkeys::VKey;
@@ -41,10 +42,12 @@ pub const SYNONYMS: [(&str, &str); 25] = [
     ("mouse5", "xbutton2"),
 ];
 
-/// Whether `name` is a key `win-hotkeys` accepts, or a mouse input whkd handles itself
+/// Whether `name` is a key `win-hotkeys` accepts, or a mouse input or gesture whkd handles itself
 #[must_use]
 pub fn is_valid(name: &str) -> bool {
-    MouseInput::parse(name).is_some() || VKey::from_keyname(name).is_ok()
+    MouseInput::parse(name).is_some()
+        || GestureInput::parse(name).is_some()
+        || VKey::from_keyname(name).is_ok()
 }
 
 /// Whether `name` is a modifier (shift, ctrl, alt or win, either side)
@@ -80,6 +83,7 @@ pub fn names() -> Vec<String> {
                 .map(String::from),
         )
         .chain(MouseInput::ALL.map(|input| input.name().to_string()))
+        .chain(GestureInput::ALL.map(|input| input.name().to_string()))
         .collect();
 
     names.sort();
@@ -206,5 +210,45 @@ mod tests {
 
         // a keyboard hotkey can have any keys before the last, as ever
         assert!(parse("a + b + h").is_ok());
+    }
+
+    #[test]
+    fn gestures_are_keys_but_not_modifiers() {
+        for input in GestureInput::ALL {
+            assert!(is_valid(input.name()), "{input}");
+            assert!(is_valid(&input.name().to_uppercase()), "{input}");
+            assert!(names().iter().any(|n| n == input.name()), "{input}");
+            assert!(!is_modifier(input.name()), "{input}");
+        }
+    }
+
+    #[test]
+    fn a_misspelt_gesture_gets_a_suggestion() {
+        let keys = validator();
+        let help = |name: &str| {
+            let src = format!(".shell cmd\n{name} : x\n");
+            whkd_parser::parse_with(&src, &keys).unwrap_err().help
+        };
+
+        assert_eq!(
+            help("swipe3lef").as_deref(),
+            Some("did you mean `swipe3left`?")
+        );
+        assert_eq!(
+            help("swipe4dwon").as_deref(),
+            Some("did you mean `swipe4down`?")
+        );
+    }
+
+    #[test]
+    fn the_keys_held_with_a_gesture_must_be_modifiers() {
+        let keys = validator();
+        let parse =
+            |hotkey: &str| whkd_parser::parse_with(&format!(".shell cmd\n{hotkey} : x\n"), &keys);
+
+        assert!(parse("ctrl + alt + swipe3up").is_ok());
+        assert!(parse("swipe4left").is_ok());
+        let e = parse("space + swipe3right").unwrap_err();
+        assert!(e.message.contains("cannot be held down"), "{}", e.message);
     }
 }

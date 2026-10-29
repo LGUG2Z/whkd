@@ -863,4 +863,12 @@ alt + when : y
             ".shell cmd\n.pause alt + p      # a\n.wheel_cooldown 150 # b\nf1 : x\n",
         );
     }
+
+    #[test]
+    fn gestures_are_formatted_like_other_keys() {
+        check(
+            ".shell cmd\nAlt+Swipe3Left:x\n",
+            ".shell cmd\nAlt + Swipe3Left : x\n",
+        );
+    }
 }

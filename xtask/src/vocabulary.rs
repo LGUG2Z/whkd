@@ -3,6 +3,7 @@
 
 use serde_json::json;
 use serde_json::Value;
+use whkd_core::GestureInput;
 use whkd_core::Layout;
 use whkd_core::MouseInput;
 use whkd_core::Shell;
@@ -17,6 +18,8 @@ pub struct Vocabulary {
     pub modifiers: Vec<String>,
     /// The buttons and scroll directions that can be the last key of a hotkey
     pub mouse_inputs: Vec<String>,
+    /// The swipes that can be the last key of a hotkey
+    pub gestures: Vec<String>,
     /// Every keyboard key that is not a modifier
     pub keys: Vec<String>,
 }
@@ -34,9 +37,17 @@ impl Vocabulary {
             .map(|input| input.name().to_string())
             .into_iter()
             .collect();
+        let gestures: Vec<String> = GestureInput::ALL
+            .map(|input| input.name().to_string())
+            .into_iter()
+            .collect();
         let keys = whkd_keys::names()
             .into_iter()
-            .filter(|name| !modifiers.contains(name) && !mouse_inputs.contains(name))
+            .filter(|name| {
+                !modifiers.contains(name)
+                    && !mouse_inputs.contains(name)
+                    && !gestures.contains(name)
+            })
             .collect();
 
         Self {
@@ -53,6 +64,7 @@ impl Vocabulary {
                 .collect(),
             modifiers,
             mouse_inputs,
+            gestures,
             keys,
         }
     }
@@ -82,6 +94,7 @@ impl Vocabulary {
                 .collect::<Vec<_>>(),
             "modifiers": self.modifiers,
             "mouse_inputs": self.mouse_inputs,
+            "gestures": self.gestures,
             "keys": self.keys,
         })
     }

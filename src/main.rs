@@ -18,6 +18,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use whkd_core::select;
 use whkd_core::Condition;
+use whkd_core::GestureInput;
 use whkd_core::HotkeyBinding;
 use whkd_core::MouseInput;
 use whkd_core::Shell;
@@ -174,7 +175,8 @@ fn key_validator() -> whkd_parser::KeyValidator {
     whkd_keys::validator()
 }
 
-/// What fires a binding: a keyboard hotkey, or a mouse input held with keyboard modifiers
+/// What fires a binding: a keyboard hotkey, or a mouse input or a touchpad gesture held with
+/// keyboard modifiers
 #[derive(Debug, Clone)]
 pub enum Trigger {
     Keyboard {
@@ -185,6 +187,10 @@ pub enum Trigger {
         mod_keys: Vec<VKey>,
         input: MouseInput,
     },
+    Gesture {
+        mod_keys: Vec<VKey>,
+        input: GestureInput,
+    },
 }
 
 /// Identifies a hotkey however it was written in the whkdrc
@@ -192,6 +198,7 @@ pub enum Trigger {
 pub enum TriggerId {
     Keyboard(Vec<u16>, u16),
     Mouse(Vec<u16>, MouseInput),
+    Gesture(Vec<u16>, GestureInput),
 }
 
 #[derive(Debug, Clone)]
@@ -215,6 +222,15 @@ impl HkmData {
                 TriggerId::Keyboard(vk_codes(mod_keys), vkey.to_vk_code())
             }
             Trigger::Mouse { mod_keys, input } => TriggerId::Mouse(vk_codes(mod_keys), *input),
+            Trigger::Gesture { mod_keys, input } => TriggerId::Gesture(vk_codes(mod_keys), *input),
+        }
+    }
+
+    /// What a gesture binding is found by, however it was written in the whkdrc
+    fn gesture_key(&self) -> Option<(GestureInput, Modifiers)> {
+        match &self.trigger {
+            Trigger::Gesture { mod_keys, input } => Some((*input, Modifiers::from_keys(mod_keys))),
+            Trigger::Keyboard { .. } | Trigger::Mouse { .. } => None,
         }
     }
 
@@ -222,7 +238,7 @@ impl HkmData {
     fn mouse_key(&self) -> Option<(MouseInput, Modifiers)> {
         match &self.trigger {
             Trigger::Mouse { mod_keys, input } => Some((*input, Modifiers::from_keys(mod_keys))),
-            Trigger::Keyboard { .. } => None,
+            Trigger::Keyboard { .. } | Trigger::Gesture { .. } => None,
         }
     }
 
@@ -261,26 +277,33 @@ impl TryFrom<&HotkeyBinding> for HkmData {
             .map(|key| VKey::from_keyname(key))
             .collect::<Result<Vec<_>, _>>()?;
 
-        // the parser guarantees that a mouse input is the last key
-        let trigger = match MouseInput::parse(last) {
-            Some(input) => {
-                if let Some(key) = mods
-                    .iter()
-                    .zip(&mod_keys)
-                    .find(|(_, key)| Modifiers::of(**key).is_none())
-                    .map(|(name, _)| name)
-                {
-                    return Err(WHKError::InvalidKey(format!(
-                        "{key} (only alt, ctrl, shift and win can be held with a mouse input)"
-                    )));
-                }
-
-                Trigger::Mouse { mod_keys, input }
+        // only modifiers can be held down with a mouse input or a gesture, since that is all that
+        // can be read when one happens
+        let only_modifiers = |what: &str| -> Result<(), WHKError> {
+            match mods
+                .iter()
+                .zip(&mod_keys)
+                .find(|(_, key)| Modifiers::of(**key).is_none())
+            {
+                Some((name, _)) => Err(WHKError::InvalidKey(format!(
+                    "{name} (only alt, ctrl, shift and win can be held with {what})"
+                ))),
+                None => Ok(()),
             }
-            None => Trigger::Keyboard {
+        };
+
+        // the parser guarantees that a mouse input or a gesture is the last key
+        let trigger = if let Some(input) = MouseInput::parse(last) {
+            only_modifiers("a mouse input")?;
+            Trigger::Mouse { mod_keys, input }
+        } else if let Some(input) = GestureInput::parse(last) {
+            only_modifiers("a gesture")?;
+            Trigger::Gesture { mod_keys, input }
+        } else {
+            Trigger::Keyboard {
                 mod_keys,
                 vkey: VKey::from_keyname(last)?,
-            },
+            }
         };
 
         Ok(Self {
@@ -477,12 +500,14 @@ fn main() -> Result<()> {
     // everything bound to the same hotkey is decided together when it is pressed, in file order
     let mut mapped: HashMap<TriggerId, Vec<HkmData>> = HashMap::new();
     let mut mouse: HashMap<(MouseInput, Modifiers), Vec<HkmData>> = HashMap::new();
+    let mut gestures: HashMap<(GestureInput, Modifiers), Vec<HkmData>> = HashMap::new();
     for (_, app_bindings) in &whkdrc.app_bindings {
         for binding in app_bindings {
             let data = HkmData::try_from(binding)?;
-            match data.mouse_key() {
-                Some(key) => mouse.entry(key).or_default().push(data),
-                None => mapped.entry(data.id()).or_default().push(data),
+            match (data.mouse_key(), data.gesture_key()) {
+                (Some(key), _) => mouse.entry(key).or_default().push(data),
+                (_, Some(key)) => gestures.entry(key).or_default().push(data),
+                (None, None) => mapped.entry(data.id()).or_default().push(data),
             }
         }
     }
@@ -494,6 +519,11 @@ fn main() -> Result<()> {
 
         if let Some(key) = data.mouse_key() {
             mouse.entry(key).or_default().push(data);
+            continue;
+        }
+
+        if let Some(key) = data.gesture_key() {
+            gestures.entry(key).or_default().push(data);
             continue;
         }
 
@@ -520,6 +550,13 @@ fn main() -> Result<()> {
 
     for data in plain {
         data.register(&mut hkm, whkdrc.shell)?;
+    }
+
+    if !gestures.is_empty() {
+        eprintln!(
+            "Touchpad gestures are not active in this build, ignoring {} gesture binding(s)",
+            gestures.len()
+        );
     }
 
     // the hook that listens for the mouse is only started if there is something to listen for
