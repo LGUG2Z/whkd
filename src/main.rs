@@ -24,7 +24,10 @@ use win_hotkeys::error::WHKError;
 use win_hotkeys::HotkeyManager;
 use win_hotkeys::VKey;
 
+// the logic is tested here and used by the mouse hook, which comes next
 mod komorebi;
+#[allow(dead_code)]
+mod mouse;
 
 lazy_static! {
     static ref WHKDRC: Whkdrc = {
