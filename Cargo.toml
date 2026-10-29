@@ -19,16 +19,16 @@ edition = "2021"
 whkd-core = { version = "0.2.8", path = "core" }
 whkd-keys = { path = "keys" }
 whkd-parser = { version = "0.2.8", path = "parser" }
-active-win-pos-rs = "0.9"
+active-win-pos-rs = "0.11"
 ariadne = "0.6"
 clap = { version = "4", features = ["derive"] }
 color-eyre = "0.6"
-dirs = "6"
+dirs = "7"
 lazy_static = "1"
 parking_lot = "0.12"
 uds_windows = "1"
 win-hotkeys = "0.5"
-windows = { version = "0.60", features = ["Win32_Foundation", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
 
 [dependencies]
 whkd-core.workspace = true
