@@ -138,6 +138,80 @@ impl Display for Layout {
     }
 }
 
+/// A mouse button or scroll direction that can trigger a binding. Two-finger scrolling on a
+/// trackpad arrives as the wheel inputs.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum MouseInput {
+    LButton,
+    RButton,
+    MButton,
+    XButton1,
+    XButton2,
+    WheelUp,
+    WheelDown,
+    WheelLeft,
+    WheelRight,
+}
+
+impl MouseInput {
+    pub const ALL: [Self; 9] = [
+        Self::LButton,
+        Self::RButton,
+        Self::MButton,
+        Self::XButton1,
+        Self::XButton2,
+        Self::WheelUp,
+        Self::WheelDown,
+        Self::WheelLeft,
+        Self::WheelRight,
+    ];
+
+    /// The name used in a whkdrc, e.g. `wheelup`
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::LButton => "lbutton",
+            Self::RButton => "rbutton",
+            Self::MButton => "mbutton",
+            Self::XButton1 => "xbutton1",
+            Self::XButton2 => "xbutton2",
+            Self::WheelUp => "wheelup",
+            Self::WheelDown => "wheeldown",
+            Self::WheelLeft => "wheelleft",
+            Self::WheelRight => "wheelright",
+        }
+    }
+
+    /// Parse a name from a whkdrc, ignoring case
+    #[must_use]
+    pub fn parse(name: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|input| input.name().eq_ignore_ascii_case(name))
+    }
+
+    /// The primary buttons cannot be bound on their own: swallowing every click would leave no way
+    /// to click anything, including to fix the config
+    #[must_use]
+    pub const fn requires_modifier(self) -> bool {
+        matches!(self, Self::LButton | Self::RButton)
+    }
+
+    #[must_use]
+    pub const fn is_wheel(self) -> bool {
+        matches!(
+            self,
+            Self::WheelUp | Self::WheelDown | Self::WheelLeft | Self::WheelRight
+        )
+    }
+}
+
+impl Display for MouseInput {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name())
+    }
+}
+
 /// A single test against the current state, e.g. `app = Firefox` or `layout != bsp`
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Predicate {
@@ -274,6 +348,46 @@ mod tests {
         for layout in Layout::ALL {
             assert_eq!(Layout::parse(layout.name()), Some(layout));
         }
+    }
+
+    #[test]
+    fn mouse_inputs_parse_by_name_in_any_case() {
+        for input in MouseInput::ALL {
+            assert_eq!(MouseInput::parse(input.name()), Some(input));
+            assert_eq!(MouseInput::parse(&input.name().to_uppercase()), Some(input));
+            assert_eq!(input.to_string(), input.name());
+        }
+
+        assert_eq!(MouseInput::parse("WheelUp"), Some(MouseInput::WheelUp));
+        for not_a_mouse_input in ["", "h", "mouse1", "wheel", "wheelup ", "lbutton1"] {
+            assert_eq!(
+                MouseInput::parse(not_a_mouse_input),
+                None,
+                "{not_a_mouse_input}"
+            );
+        }
+    }
+
+    #[test]
+    fn only_the_primary_buttons_need_a_modifier() {
+        let needing: Vec<_> = MouseInput::ALL
+            .into_iter()
+            .filter(|input| input.requires_modifier())
+            .collect();
+        assert_eq!(needing, vec![MouseInput::LButton, MouseInput::RButton]);
+    }
+
+    #[test]
+    fn the_wheel_inputs_are_the_four_directions() {
+        let wheels: Vec<_> = MouseInput::ALL
+            .into_iter()
+            .filter(|input| input.is_wheel())
+            .map(MouseInput::name)
+            .collect();
+        assert_eq!(
+            wheels,
+            vec!["wheelup", "wheeldown", "wheelleft", "wheelright"]
+        );
     }
 
     #[test]
