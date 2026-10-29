@@ -95,6 +95,34 @@ running. It also reports things that parse but are probably a mistake:
 - a binding with an empty command
 - (as advice) a hotkey that only has conditional bindings and no default, which swallows the key when none match
 
+## Formatting
+
+`whkd fmt` formats a configuration file, using the same lookup as `whkd validate` (the default location, the global
+`--config` flag, or an explicit `whkd fmt path\to\whkdrc`). By default the formatted file is printed to stdout.
+
+```
+whkd fmt                  # print the formatted default config
+whkd fmt --write          # rewrite the file in place (only if something changed), also -w
+whkd fmt --check          # print nothing; exit 1 and name the file on stderr if it is not formatted
+```
+
+`--write` and `--check` cannot be combined. A file that does not parse is reported exactly as `whkd validate` reports it
+and is never modified, and the formatted output is re-parsed and compared with the original before it is used, so
+formatting can never change what a configuration means. Comments and blank lines are kept. It normalizes:
+
+- hotkeys to `alt + shift + h` (key spelling and case are kept)
+- the `:` of each run of consecutive bindings (a `when` guard counts as part of the
+  hotkey) to a single column; runs are separated by blank lines or comments and are aligned independently
+- `[ ... ]` blocks: entries indented by 4 spaces with their `:` aligned across the block, `]` at column 0, and
+  conditions written as `layout = bsp | grid & app != Code`
+- one space after directives, with trailing comments of consecutive directives aligned
+- more than one blank line to one, trailing whitespace, and the end of the file (a single trailing newline); comment
+  lines are re-indented to the block they are in but not otherwise changed
+- line endings (CRLF or LF, whichever the file mostly uses) and a leading byte order mark are preserved
+
+Bindings are never reordered, merged or split, and commands are not touched. Lines the formatter does not understand
+(for example several constructs on one line) cause the file to be left as it is.
+
 ## Valid Hotkeys
 The list of valid hotkeys can be found [here](https://docs.rs/win-hotkeys/latest/win_hotkeys/enum.VKey.html).
 

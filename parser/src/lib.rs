@@ -16,6 +16,8 @@ use whkd_core::Predicate;
 use whkd_core::Shell;
 use whkd_core::Whkdrc;
 
+pub mod format;
+
 #[derive(Debug, Error)]
 pub enum WhkdError {
     #[error(transparent)]

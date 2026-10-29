@@ -59,8 +59,8 @@ fn default_config_path() -> Result<PathBuf> {
     Ok(home)
 }
 
-/// Check that a whkdrc parses and only uses valid key names, printing a report if it does not
-fn validate(path: Option<PathBuf>) -> Result<()> {
+/// The explicit path if there is one, otherwise the default, exiting if there is no such file
+fn existing_config_path(path: Option<PathBuf>) -> Result<PathBuf> {
     let path = match path {
         Some(path) => path,
         None => default_config_path()?,
@@ -70,6 +70,70 @@ fn validate(path: Option<PathBuf>) -> Result<()> {
         eprintln!("{}: no such file", path.display());
         std::process::exit(1);
     }
+
+    Ok(path)
+}
+
+/// Format a whkdrc, refusing to touch one that does not parse
+fn fmt(path: Option<PathBuf>, write: bool, check: bool) -> Result<()> {
+    let path = existing_config_path(path)?;
+    let keys = key_validator();
+
+    let src = std::fs::read_to_string(&path).unwrap_or_else(|error| {
+        eprintln!("{}: {error}", path.display());
+        std::process::exit(1)
+    });
+
+    let original = match whkd_parser::parse_full(&src, Some(&keys)) {
+        Ok(parsed) => parsed.whkdrc,
+        Err(error) => {
+            eprintln!(
+                "{}",
+                whkd_parser::WhkdError::Parse {
+                    path,
+                    src,
+                    error: Box::new(error),
+                }
+            );
+            std::process::exit(1)
+        }
+    };
+
+    let formatted = whkd_parser::format::format(&src);
+
+    // the formatter must never change what a whkdrc means
+    let same = whkd_parser::parse_full(&formatted, Some(&keys))
+        .is_ok_and(|parsed| parsed.whkdrc == original);
+    if !same {
+        eprintln!(
+            "{}: the formatter produced a different configuration, refusing to use its output (this is a bug in `whkd fmt`)",
+            path.display()
+        );
+        std::process::exit(1);
+    }
+
+    if check {
+        if formatted != src {
+            eprintln!("{}: not formatted", path.display());
+            std::process::exit(1);
+        }
+    } else if write {
+        if formatted == src {
+            println!("{}: unchanged", path.display());
+        } else {
+            std::fs::write(&path, formatted)?;
+            println!("{}: formatted", path.display());
+        }
+    } else {
+        print!("{formatted}");
+    }
+
+    Ok(())
+}
+
+/// Check that a whkdrc parses and only uses valid key names, printing a report if it does not
+fn validate(path: Option<PathBuf>) -> Result<()> {
+    let path = existing_config_path(path)?;
 
     match whkd_parser::load_checked(&path, &key_validator()) {
         Ok(loaded) => {
@@ -228,6 +292,17 @@ enum SubCommand {
         /// Path to whkdrc (defaults to the usual lookup: $WHKD_CONFIG_HOME or ~/.config)
         path: Option<PathBuf>,
     },
+    /// Format a whkdrc, keeping its comments, and print the result (or rewrite the file)
+    Fmt {
+        /// Path to whkdrc (defaults to the usual lookup: $WHKD_CONFIG_HOME or ~/.config)
+        path: Option<PathBuf>,
+        /// Rewrite the file in place instead of printing the result
+        #[clap(short, long, conflicts_with = "check")]
+        write: bool,
+        /// Print nothing, and exit with a non-zero status if the file is not formatted
+        #[clap(long)]
+        check: bool,
+    },
 }
 
 /// The command to run for the entries bound to a key, given the current state
@@ -301,6 +376,10 @@ fn main() -> Result<()> {
 
     if let Some(SubCommand::Validate { path }) = cli.command {
         return validate(path.or(cli.config));
+    }
+
+    if let Some(SubCommand::Fmt { path, write, check }) = cli.command {
+        return fmt(path.or(cli.config), write, check);
     }
 
     let whkdrc = cli.config.map_or_else(
