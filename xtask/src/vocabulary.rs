@@ -158,6 +158,31 @@ mod tests {
     }
 
     #[test]
+    fn layout_patterns_reject_what_the_parser_rejects() {
+        for layout in Layout::ALL {
+            let pattern = Regex::new(&format!("^(?:{})$", layout_pattern(layout))).unwrap();
+            let name = layout.name();
+
+            // a separator inside a word, or doubled, or trailing, is not a spelling of the layout
+            for misspelt in [
+                format!("{}_{}", &name[..1], &name[1..]),
+                format!("{name}_"),
+                format!("-{name}"),
+                format!("{name}.x"),
+                name.replace('-', "--"),
+            ] {
+                // a layout of one word has no hyphen to double
+                if misspelt == name {
+                    continue;
+                }
+
+                assert_eq!(Layout::parse(&misspelt), None, "{misspelt}");
+                assert!(!pattern.is_match(&misspelt), "{misspelt}");
+            }
+        }
+    }
+
+    #[test]
     fn layout_patterns_do_not_match_other_layouts() {
         for layout in Layout::ALL {
             let pattern = Regex::new(&format!("^(?:{})$", layout_pattern(layout))).unwrap();

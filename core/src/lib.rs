@@ -103,14 +103,32 @@ impl Layout {
         }
     }
 
-    /// Parse a layout name, ignoring case and separators so that both `ultrawide-vertical-stack`
-    /// and komorebi's own `UltrawideVerticalStack` are accepted
+    /// Parse a layout name, ignoring case, and allowing a `-`, `_` or space (or nothing) between
+    /// its words, so that both `ultrawide-vertical-stack` and komorebi's own
+    /// `UltrawideVerticalStack` are accepted. Separators anywhere else are not: `s_crolling` is
+    /// not a layout.
     #[must_use]
     pub fn parse(name: &str) -> Option<Self> {
-        let name = normalise(name);
         Self::ALL
             .into_iter()
-            .find(|layout| normalise(layout.name()) == name)
+            .find(|layout| layout.is_spelt_as(name))
+    }
+
+    fn is_spelt_as(self, spelling: &str) -> bool {
+        let mut rest = spelling;
+
+        for (index, word) in self.name().split('-').enumerate() {
+            if index > 0 {
+                rest = rest.strip_prefix(['-', '_', ' ']).unwrap_or(rest);
+            }
+
+            match rest.get(..word.len()) {
+                Some(head) if head.eq_ignore_ascii_case(word) => rest = &rest[word.len()..],
+                _ => return false,
+            }
+        }
+
+        rest.is_empty()
     }
 }
 
@@ -118,13 +136,6 @@ impl Display for Layout {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name())
     }
-}
-
-fn normalise(name: &str) -> String {
-    name.chars()
-        .filter(|c| c.is_alphanumeric())
-        .flat_map(char::to_lowercase)
-        .collect()
 }
 
 /// A single test against the current state, e.g. `app = Firefox` or `layout != bsp`
@@ -243,6 +254,23 @@ mod tests {
             Some(Layout::RightMainVerticalStack)
         );
         assert_eq!(Layout::parse("nope"), None);
+
+        // separators go between the words, and nowhere else
+        assert_eq!(
+            Layout::parse("ultrawide vertical_stack"),
+            Some(Layout::UltrawideVerticalStack)
+        );
+        for misspelt in [
+            "s_crolling",
+            "bs.p",
+            "scrolling_",
+            "sc rolling",
+            "-bsp",
+            "ultrawide--vertical-stack",
+            "",
+        ] {
+            assert_eq!(Layout::parse(misspelt), None, "{misspelt}");
+        }
         for layout in Layout::ALL {
             assert_eq!(Layout::parse(layout.name()), Some(layout));
         }
