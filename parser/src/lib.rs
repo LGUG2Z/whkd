@@ -16,6 +16,7 @@ use whkd_core::MouseInput;
 use whkd_core::Predicate;
 use whkd_core::Shell;
 use whkd_core::Whkdrc;
+use whkd_core::MAX_WHEEL_COOLDOWN_MS;
 
 pub mod syntax;
 
@@ -39,6 +40,7 @@ use syntax::PAUSE;
 use syntax::PAUSE_HOOK;
 use syntax::PREDICATES;
 use syntax::SHELL;
+use syntax::WHEEL_COOLDOWN;
 use syntax::WHEN;
 
 pub mod format;
@@ -474,6 +476,16 @@ impl<'a> Cursor<'a> {
             None
         };
 
+        let wheel_cooldown = if self.at_keyword(WHEEL_COOLDOWN) {
+            self.pos += WHEEL_COOLDOWN.len();
+            self.skip_inline();
+            let milliseconds = self.parse_milliseconds()?;
+            self.skip_trivia();
+            Some(milliseconds)
+        } else {
+            None
+        };
+
         let mut app_bindings = vec![];
         let mut bindings = vec![];
 
@@ -562,9 +574,48 @@ impl<'a> Cursor<'a> {
                 bindings,
                 pause_binding,
                 pause_hook,
+                wheel_cooldown,
             },
             warnings,
         })
+    }
+
+    /// A whole number of milliseconds
+    fn parse_milliseconds(&mut self) -> Result<u32, ParseError> {
+        let start = self.pos;
+        let word = self.take_while(|c| !c.is_whitespace() && c != COMMENT);
+        let span = if word.is_empty() {
+            self.here()
+        } else {
+            start..self.pos
+        };
+
+        let Some(milliseconds) = Some(word)
+            .filter(|word| !word.is_empty() && word.chars().all(|c| c.is_ascii_digit()))
+            .and_then(|word| word.parse::<u32>().ok())
+        else {
+            return Err(ParseError::new(
+                if word.is_empty() {
+                    format!("expected a number of milliseconds, found {}", self.found())
+                } else {
+                    format!("expected a number of milliseconds, found `{word}`")
+                },
+                span,
+                "expected a whole number such as `150`",
+            )
+            .with_help("the cooldown is in milliseconds, and `0` turns it off"));
+        };
+
+        if milliseconds > MAX_WHEEL_COOLDOWN_MS {
+            return Err(ParseError::new(
+                format!("a cooldown of {milliseconds} milliseconds is too long"),
+                span,
+                format!("at most {MAX_WHEEL_COOLDOWN_MS}"),
+            )
+            .with_help("the cooldown is in milliseconds"));
+        }
+
+        Ok(milliseconds)
     }
 
     fn parse_shell(&mut self) -> Result<Shell, ParseError> {
@@ -1185,6 +1236,7 @@ alt + h : echo "Hello""#;
             }],
             pause_binding: None,
             pause_hook: None,
+            wheel_cooldown: None,
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -1209,6 +1261,7 @@ alt + h : echo "Hello""#;
             }],
             pause_binding: None,
             pause_hook: None,
+            wheel_cooldown: None,
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -1290,6 +1343,7 @@ alt + 1 : komorebic focus-workspace 0 # digits are fine in the hotkeys section
             ],
             pause_binding: None,
             pause_hook: None,
+            wheel_cooldown: None,
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -1314,6 +1368,7 @@ f11 : echo "hello f11""#;
             }],
             pause_binding: None,
             pause_hook: None,
+            wheel_cooldown: None,
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -1368,6 +1423,7 @@ alt + h : echo "Hello""#;
             }],
             pause_binding: None,
             pause_hook: None,
+            wheel_cooldown: None,
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -1396,6 +1452,7 @@ alt + h : echo "Hello""#;
                 "esc".to_string(),
             ]),
             pause_hook: None,
+            wheel_cooldown: None,
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -1425,6 +1482,7 @@ alt + h : echo "Hello""#;
                 "esc".to_string(),
             ]),
             pause_hook: Some("komorebic toggle-pause".to_string()),
+            wheel_cooldown: None,
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -1454,6 +1512,7 @@ alt + h : echo "Hello""#;
                 "p".to_string(),
             ]),
             pause_hook: Some("komorebic toggle-pause".to_string()),
+            wheel_cooldown: None,
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -2027,5 +2086,55 @@ alt + h + wheelup : x
 "
         )
         .is_ok());
+    }
+
+    #[test]
+    fn test_wheel_cooldown() {
+        let with = |directive: &str| parse(&format!(".shell cmd\n{directive}\nf1 : x\n"));
+
+        assert_eq!(parse(".shell cmd\nf1 : x\n").unwrap().wheel_cooldown, None);
+        assert_eq!(
+            with(".wheel_cooldown 150").unwrap().wheel_cooldown,
+            Some(150)
+        );
+        assert_eq!(
+            with(".wheel_cooldown 0 # off").unwrap().wheel_cooldown,
+            Some(0)
+        );
+        assert_eq!(
+            with(".wheel_cooldown   60000   ").unwrap().wheel_cooldown,
+            Some(60_000)
+        );
+
+        // after the other directives
+        let src = ".shell cmd\n.pause alt + p\n.pause_hook x\n.wheel_cooldown 20\nf1 : y\n";
+        let output = parse(src).unwrap();
+        assert_eq!(output.wheel_cooldown, Some(20));
+        assert_eq!(output.pause_hook.as_deref(), Some("x"));
+    }
+
+    #[test]
+    fn test_error_wheel_cooldown() {
+        let src = ".shell cmd\n.wheel_cooldown fast\nf1 : x\n";
+        let e = err(src);
+        assert_eq!(e.message, "expected a number of milliseconds, found `fast`");
+        assert_eq!(&src[e.span.clone()], "fast");
+
+        for bad in ["", "150ms", "-5", "+5", "1.5", "99999999999999999999"] {
+            let src = format!(".shell cmd\n.wheel_cooldown {bad}\nf1 : x\n");
+            assert!(parse(&src).is_err(), "{bad:?}");
+        }
+
+        let e = err(".shell cmd\n.wheel_cooldown\nf1 : x\n");
+        assert!(e
+            .message
+            .starts_with("expected a number of milliseconds, found end of line"));
+
+        let e = err(".shell cmd\n.wheel_cooldown 60001\nf1 : x\n");
+        assert_eq!(e.message, "a cooldown of 60001 milliseconds is too long");
+
+        // once, and in its place among the directives
+        assert!(parse(".shell cmd\n.wheel_cooldown 1\n.wheel_cooldown 2\nf1 : x\n").is_err());
+        assert!(parse(".shell cmd\n.wheel_cooldown 1\n.pause alt + p\nf1 : x\n").is_err());
     }
 }

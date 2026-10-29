@@ -328,6 +328,20 @@ pub fn grammar(vocabulary: &Vocabulary) -> Value {
         }),
     );
 
+    add(
+        "wheel-cooldown".into(),
+        json!({
+            "match": format!(
+                r"^[ \t]*({}){AFTER_WORD}[ \t]*([0-9]+)?",
+                directive(syntax::WHEEL_COOLDOWN)
+            ),
+            "captures": {
+                "1": { "name": "keyword.control.directive.whkdrc" },
+                "2": { "name": "constant.numeric.whkdrc" }
+            }
+        }),
+    );
+
     // `.shell` with something other than a shell after it
     add(
         "shell-unknown".into(),
@@ -347,6 +361,7 @@ pub fn grammar(vocabulary: &Vocabulary) -> Value {
             json!({ "include": "#comment" }),
             json!({ "include": format!("#pause-hook-{suffix}") }),
             json!({ "include": "#pause" }),
+            json!({ "include": "#wheel-cooldown" }),
             json!({ "include": format!("#block-{suffix}") }),
             json!({ "include": format!("#when-{suffix}") }),
             json!({ "include": format!("#binding-{suffix}") }),

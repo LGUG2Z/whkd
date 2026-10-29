@@ -3,7 +3,8 @@
   "directives": [
     ".shell",
     ".pause",
-    ".pause_hook"
+    ".pause_hook",
+    ".wheel_cooldown"
   ],
   "keys": [
     "0",

@@ -25,6 +25,9 @@
       "include": "#pause"
     },
     {
+      "include": "#wheel-cooldown"
+    },
+    {
       "include": "#block-plain"
     },
     {
@@ -514,6 +517,9 @@
           "include": "#pause"
         },
         {
+          "include": "#wheel-cooldown"
+        },
+        {
           "include": "#block-batch"
         },
         {
@@ -547,6 +553,9 @@
           "include": "#pause"
         },
         {
+          "include": "#wheel-cooldown"
+        },
+        {
           "include": "#block-powershell"
         },
         {
@@ -567,6 +576,17 @@
         }
       },
       "match": "^[ \\t]*(\\.shell)(?![\\p{L}\\p{N}_])(?:[ \\t]+([^\\s#]+))?"
+    },
+    "wheel-cooldown": {
+      "captures": {
+        "1": {
+          "name": "keyword.control.directive.whkdrc"
+        },
+        "2": {
+          "name": "constant.numeric.whkdrc"
+        }
+      },
+      "match": "^[ \\t]*(\\.wheel_cooldown)(?![\\p{L}\\p{N}_])[ \\t]*([0-9]+)?"
     },
     "when-batch": {
       "begin": "^[ \\t]*((?:[\\p{L}_][\\p{L}\\p{N}_]*|[0-9]+)(?:[ \\t]*\\+[ \\t]*(?:[\\p{L}_][\\p{L}\\p{N}_]*|[0-9]+))*)[ \\t]+(when)(?![\\p{L}\\p{N}_])",

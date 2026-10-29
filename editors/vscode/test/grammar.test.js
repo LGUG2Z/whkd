@@ -285,6 +285,12 @@ test('mouse inputs are highlighted as keys of their own', async () => {
   assertScope(wheel, 'wheelup', 'constant.character.key.mouse');
   assertScope(lineWith(lines, 'komorebic focus right'), 'wheeldown', 'constant.character.key.mouse');
 
+  // the cooldown directive, with its number
+  const cooldown = lineWith(lines, '.wheel_cooldown');
+  assertScope(cooldown, '.wheel_cooldown', 'keyword.control.directive');
+  assertScope(cooldown, '150', 'constant.numeric');
+  assertScope(cooldown, '# milliseconds', 'comment.line');
+
   // in any case, and with several modifiers
   const middle = lineWith(lines, 'toggle-monocle');
   assertScope(middle, 'Alt', 'keyword.other.modifier');

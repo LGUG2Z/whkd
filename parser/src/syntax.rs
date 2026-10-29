@@ -27,9 +27,10 @@ pub const AND: char = '&';
 pub const SHELL: &str = ".shell";
 pub const PAUSE: &str = ".pause";
 pub const PAUSE_HOOK: &str = ".pause_hook";
+pub const WHEEL_COOLDOWN: &str = ".wheel_cooldown";
 
 /// The directives, in the order they must appear
-pub const DIRECTIVES: [&str; 3] = [SHELL, PAUSE, PAUSE_HOOK];
+pub const DIRECTIVES: [&str; 4] = [SHELL, PAUSE, PAUSE_HOOK, WHEEL_COOLDOWN];
 
 /// `keys when condition : command`
 pub const WHEN: &str = "when";

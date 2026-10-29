@@ -207,7 +207,7 @@ mod tests {
         let vocabulary = Vocabulary::load();
         assert_eq!(
             vocabulary.directives,
-            vec![".shell", ".pause", ".pause_hook"]
+            vec![".shell", ".pause", ".pause_hook", ".wheel_cooldown"]
         );
         assert_eq!(vocabulary.shells, vec!["cmd", "pwsh", "powershell"]);
         assert_eq!(vocabulary.layouts.len(), Layout::ALL.len());

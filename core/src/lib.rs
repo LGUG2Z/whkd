@@ -8,7 +8,17 @@ pub struct Whkdrc {
     pub bindings: Vec<HotkeyBinding>,
     pub pause_binding: Option<Vec<String>>,
     pub pause_hook: Option<String>,
+    /// How long, in milliseconds, a wheel binding ignores further scrolling after it fires, if the
+    /// whkdrc says so. Otherwise it is [`DEFAULT_WHEEL_COOLDOWN_MS`]
+    pub wheel_cooldown: Option<u32>,
 }
+
+/// A trackpad keeps scrolling for a moment after the fingers lift, so without a pause between
+/// them one flick could fire a binding many times. Short enough not to be felt with a mouse wheel
+pub const DEFAULT_WHEEL_COOLDOWN_MS: u32 = 100;
+
+/// A cooldown longer than this is a mistake, such as microseconds written as milliseconds
+pub const MAX_WHEEL_COOLDOWN_MS: u32 = 60_000;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Shell {

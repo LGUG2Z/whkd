@@ -15,6 +15,7 @@ use crate::syntax::is_value_char;
 use crate::syntax::PAUSE;
 use crate::syntax::PAUSE_HOOK;
 use crate::syntax::SHELL;
+use crate::syntax::WHEEL_COOLDOWN;
 use crate::syntax::WHEN;
 
 /// Format the contents of a whkdrc. Input that does not parse is returned unchanged
@@ -235,6 +236,20 @@ fn classify(text: &str, in_block: bool) -> Option<Item> {
 
         return Some(Item::Directive {
             content: format!("{PAUSE} {keys}"),
+            comment: lx.tail()?,
+        });
+    }
+
+    if lx.keyword(WHEEL_COOLDOWN) {
+        lx.rest = &lx.rest[WHEEL_COOLDOWN.len()..];
+        lx.skip_inline();
+        let milliseconds = lx.take_while(|c| c.is_ascii_digit());
+        if milliseconds.is_empty() {
+            return None;
+        }
+
+        return Some(Item::Directive {
+            content: format!("{WHEEL_COOLDOWN} {milliseconds}"),
             comment: lx.tail()?,
         });
     }
@@ -838,6 +853,14 @@ alt + when : y
         check(
             ".shell cmd\nAlt+WheelUp:x\nalt   +   xbutton1  when  layout=bsp:y\n",
             ".shell cmd\nAlt + WheelUp                    : x\nalt + xbutton1 when layout = bsp : y\n",
+        );
+    }
+
+    #[test]
+    fn the_wheel_cooldown_directive_is_formatted_like_the_others() {
+        check(
+            ".shell cmd\n.pause alt+p # a\n.wheel_cooldown    150   # b\nf1:x\n",
+            ".shell cmd\n.pause alt + p      # a\n.wheel_cooldown 150 # b\nf1 : x\n",
         );
     }
 }
