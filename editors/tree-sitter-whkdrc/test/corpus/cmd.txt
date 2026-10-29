@@ -1,0 +1,41 @@
+================================================================================
+cmd
+================================================================================
+
+.shell cmd
+
+alt + h : echo hello
+
+alt + n [
+    Firefox : echo "hello firefox"
+    Default : echo hello
+]
+
+alt + q : echo done
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (shell_directive
+    (shell_name))
+  (binding
+    (hotkeys
+      (key)
+      (key))
+    (command))
+  (block
+    (hotkeys
+      (key)
+      (key))
+    (entry
+      (condition
+        (process_name))
+      (command))
+    (entry
+      (default)
+      (command)))
+  (binding
+    (hotkeys
+      (key)
+      (key))
+    (command)))

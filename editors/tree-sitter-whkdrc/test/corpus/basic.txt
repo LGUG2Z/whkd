@@ -1,0 +1,55 @@
+================================================================================
+basic
+================================================================================
+
+.shell pwsh # can be one of cmd | pwsh | powershell
+.pause alt + shift + p # toggle all other hotkeys on and off
+.pause_hook komorebic toggle-pause
+
+# focus windows
+alt + h : komorebic focus left # a trailing comment
+alt + j : komorebic focus down
+alt + 1 : komorebic focus-workspace 0
+f11 : komorebic toggle-maximize
+alt + k : Write-Host "hello powershell"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (shell_directive
+    (shell_name))
+  (comment)
+  (pause_directive
+    (hotkeys
+      (key)
+      (key)
+      (key)))
+  (comment)
+  (pause_hook_directive
+    (command))
+  (comment)
+  (binding
+    (hotkeys
+      (key)
+      (key))
+    (command))
+  (comment)
+  (binding
+    (hotkeys
+      (key)
+      (key))
+    (command))
+  (binding
+    (hotkeys
+      (key)
+      (key))
+    (command))
+  (binding
+    (hotkeys
+      (key))
+    (command))
+  (binding
+    (hotkeys
+      (key)
+      (key))
+    (command)))

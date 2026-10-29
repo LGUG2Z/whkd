@@ -1,0 +1,17 @@
+{
+  "name": "tree-sitter-whkdrc",
+  "version": "0.1.0",
+  "description": "tree-sitter grammar for whkd configuration files",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LGUG2Z/whkd"
+  },
+  "scripts": {
+    "generate": "tree-sitter generate",
+    "test": "tree-sitter test"
+  },
+  "devDependencies": {
+    "tree-sitter-cli": "^0.27.1"
+  }
+}

@@ -4,7 +4,10 @@
 //! code that implements the language, so adding a layout or keyword in Rust reaches every editor
 //! target. `--check` fails if a committed generated file is stale, and runs as a test too.
 
+#[cfg(test)]
+mod differential;
 mod textmate;
+mod treesitter;
 mod vocabulary;
 
 use std::path::Path;
@@ -27,6 +30,22 @@ pub fn generated_files() -> Vec<(PathBuf, String)> {
         (
             PathBuf::from("editors/vscode/syntaxes/whkdrc.tmLanguage.json"),
             json(&textmate::grammar(&vocabulary)),
+        ),
+        (
+            PathBuf::from("editors/tree-sitter-whkdrc/grammar.js"),
+            treesitter::grammar_js(&vocabulary),
+        ),
+        (
+            PathBuf::from("editors/tree-sitter-whkdrc/queries/highlights.scm"),
+            treesitter::highlights(&vocabulary),
+        ),
+        (
+            PathBuf::from("editors/tree-sitter-whkdrc/queries/injections.scm"),
+            treesitter::injections(),
+        ),
+        (
+            PathBuf::from("editors/tree-sitter-whkdrc/queries/folds.scm"),
+            treesitter::folds(),
         ),
     ]
 }
@@ -132,7 +151,7 @@ mod tests {
         );
     }
 
-    fn fixtures(dir: &str) -> Vec<(PathBuf, String)> {
+    pub fn fixtures(dir: &str) -> Vec<(PathBuf, String)> {
         let dir = repository_root().join(dir);
         let mut found: Vec<(PathBuf, String)> = std::fs::read_dir(&dir)
             .unwrap_or_else(|error| panic!("{}: {error}", dir.display()))
@@ -175,6 +194,40 @@ mod tests {
                 whkd_parser::parse_full(&source, None).is_err(),
                 "{} should not be a valid whkdrc",
                 path.display()
+            );
+        }
+    }
+
+    /// `src/` is generated from `grammar.js` by the tree-sitter CLI rather than by xtask, so a stale
+    /// copy would otherwise go unnoticed after the language changes
+    #[test]
+    fn the_generated_tree_sitter_parser_is_not_stale() {
+        let vocabulary = Vocabulary::load();
+        let path = repository_root().join("editors/tree-sitter-whkdrc/src/grammar.json");
+        let grammar = std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+
+        let words = vocabulary
+            .directives
+            .iter()
+            .chain(&vocabulary.shells)
+            .chain(&vocabulary.keywords)
+            .chain(&vocabulary.predicates)
+            // a command, not part of the grammar: the highlight query looks for it
+            .filter(|word| word.as_str() != whkd_parser::syntax::IGNORE);
+
+        for word in words {
+            assert!(
+                grammar.contains(&format!("\"{word}\"")),
+                "src/grammar.json never mentions {word}: run `npx tree-sitter generate`"
+            );
+        }
+
+        for layout in &vocabulary.layouts {
+            assert!(
+                grammar.contains(&layout.pattern),
+                "src/grammar.json is missing the layout {}: run `npx tree-sitter generate`",
+                layout.name
             );
         }
     }

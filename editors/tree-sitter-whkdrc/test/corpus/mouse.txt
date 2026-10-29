@@ -1,0 +1,73 @@
+================================================================================
+mouse
+================================================================================
+
+.shell pwsh
+.wheel_cooldown 150 # milliseconds
+.gesture_cooldown 300
+
+alt + wheelup : komorebic focus left
+alt + wheeldown : komorebic focus right
+Alt + Shift + MButton : komorebic toggle-monocle
+alt + xbutton1 : komorebic cycle-workspace previous
+alt + wheelup when layout = scrolling : komorebic scroll-left
+alt + shift + wheeldown [
+    app = Firefox : echo only in firefox
+    Default       : echo everywhere else
+]
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (shell_directive
+    (shell_name))
+  (wheel_cooldown_directive
+    (number))
+  (comment)
+  (gesture_cooldown_directive
+    (number))
+  (binding
+    (hotkeys
+      (key)
+      (key))
+    (command))
+  (binding
+    (hotkeys
+      (key)
+      (key))
+    (command))
+  (binding
+    (hotkeys
+      (key)
+      (key)
+      (key))
+    (command))
+  (binding
+    (hotkeys
+      (key)
+      (key))
+    (command))
+  (binding
+    (hotkeys
+      (key)
+      (key))
+    (when_clause
+      (condition
+        (layout_predicate
+          (comparison)
+          (layout_name))))
+    (command))
+  (block
+    (hotkeys
+      (key)
+      (key)
+      (key))
+    (entry
+      (condition
+        (app_predicate
+          (comparison)
+          (app_name)))
+      (command))
+    (entry
+      (default)
+      (command))))

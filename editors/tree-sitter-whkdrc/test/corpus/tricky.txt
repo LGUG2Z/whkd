@@ -1,0 +1,66 @@
+================================================================================
+tricky
+================================================================================
+
+.shell pwsh
+
+alt + when : echo a key named when
+alt + shift + when when app = Code : echo a guard on a key named when
+alt + c : echo before # this is a comment, not part of the command
+alt + e :
+alt + 5 : echo digits are keys
+ctrl + alt + oem_plus : echo oem
+alt + n [
+    Google Chrome : echo a process name with a space
+]
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (shell_directive
+    (shell_name))
+  (binding
+    (hotkeys
+      (key)
+      (key))
+    (command))
+  (binding
+    (hotkeys
+      (key)
+      (key)
+      (key))
+    (when_clause
+      (condition
+        (app_predicate
+          (comparison)
+          (app_name))))
+    (command))
+  (binding
+    (hotkeys
+      (key)
+      (key))
+    (command))
+  (comment)
+  (binding
+    (hotkeys
+      (key)
+      (key)))
+  (binding
+    (hotkeys
+      (key)
+      (key))
+    (command))
+  (binding
+    (hotkeys
+      (key)
+      (key)
+      (key))
+    (command))
+  (block
+    (hotkeys
+      (key)
+      (key))
+    (entry
+      (condition
+        (process_name))
+      (command))))

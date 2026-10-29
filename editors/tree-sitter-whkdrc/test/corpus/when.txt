@@ -1,0 +1,53 @@
+================================================================================
+when
+================================================================================
+
+.shell pwsh
+
+alt + left : komorebic stack left
+alt + left when layout = scrolling : komorebic consume left
+alt + f when app = Firefox | Code & layout != bsp : echo guarded
+alt + g when Firefox : echo a bare process name
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (shell_directive
+    (shell_name))
+  (binding
+    (hotkeys
+      (key)
+      (key))
+    (command))
+  (binding
+    (hotkeys
+      (key)
+      (key))
+    (when_clause
+      (condition
+        (layout_predicate
+          (comparison)
+          (layout_name))))
+    (command))
+  (binding
+    (hotkeys
+      (key)
+      (key))
+    (when_clause
+      (condition
+        (app_predicate
+          (comparison)
+          (app_name)
+          (app_name))
+        (layout_predicate
+          (comparison)
+          (layout_name))))
+    (command))
+  (binding
+    (hotkeys
+      (key)
+      (key))
+    (when_clause
+      (condition
+        (process_name)))
+    (command)))

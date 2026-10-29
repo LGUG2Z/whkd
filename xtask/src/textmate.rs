@@ -6,11 +6,12 @@
 //! `.shell pwsh` and never closes covers the rest of the file, so everything below it is scoped
 //! for that shell.
 
+use crate::vocabulary::shells_in;
+use crate::vocabulary::ShellFamily;
 use crate::vocabulary::Vocabulary;
 use serde_json::json;
 use serde_json::Map;
 use serde_json::Value;
-use whkd_core::Shell;
 use whkd_parser::syntax;
 
 const SCOPE: &str = "source.whkdrc";
@@ -377,19 +378,11 @@ pub fn grammar(vocabulary: &Vocabulary) -> Value {
     };
 
     // one rule per family of shells: it opens at `.shell <name>` and never closes
-    for (name, variant) in [("powershell", &POWERSHELL), ("batch", &BATCH)] {
-        let shells: Vec<String> = Shell::ALL
-            .into_iter()
-            .filter(|shell| {
-                // an exhaustive match, so that a new shell has to be assigned to a family here
-                let family = match shell {
-                    Shell::Pwsh | Shell::Powershell => "powershell",
-                    Shell::Cmd => "batch",
-                };
-                family == name
-            })
-            .map(|shell| shell.name().to_string())
-            .collect();
+    for (name, family, variant) in [
+        ("powershell", ShellFamily::PowerShell, &POWERSHELL),
+        ("batch", ShellFamily::Batch, &BATCH),
+    ] {
+        let shells = shells_in(family);
 
         add(
             format!("shell-{name}"),

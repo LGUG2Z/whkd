@@ -1,0 +1,66 @@
+.shell pwsh
+# <- keyword.directive
+#      ^ constant.builtin
+.pause alt + shift + p # a comment
+# <- keyword.directive
+#      ^ keyword.modifier
+#            ^ keyword.modifier
+#          ^ operator
+#                    ^ constant
+#                      ^ comment
+.pause_hook komorebic toggle-pause
+# <- keyword.directive
+.wheel_cooldown 150
+# <- keyword.directive
+#               ^ number
+.gesture_cooldown 300
+# <- keyword.directive
+#                 ^ number
+
+alt + h : echo hi
+# <- keyword.modifier
+#   ^ operator
+#     ^ constant
+#       ^ punctuation.delimiter
+Ctrl + F11 : echo a modifier in another case
+# <- keyword.modifier
+#      ^ constant
+alt + h : Ignore
+#         ^ keyword
+alt + wheelup : x
+# <- keyword.modifier
+#     ^ constant.builtin
+Alt + Shift + MButton : x
+#             ^ constant.builtin
+swipe3 : x
+# <- constant.builtin
+alt + Swipe4Left : x
+# <- keyword.modifier
+#     ^ constant.builtin
+alt + left when layout = scrolling : x
+#          ^ keyword.conditional
+#               ^ variable.parameter
+#                      ^ operator
+#                        ^ constant.builtin
+alt + n [
+#       ^ punctuation.bracket
+    Firefox : x
+#   ^ type
+    Google Chrome : x
+#   ^ type
+    app = Zen Browser | Code & layout != bsp | grid : x
+#   ^ variable.parameter
+#         ^ type
+#                     ^ operator
+#                       ^ type
+#                            ^ operator
+#                              ^ variable.parameter
+#                                     ^ operator
+#                                        ^ constant.builtin
+#                                              ^ constant.builtin
+    layout = UltrawideVerticalStack : x
+#            ^ constant.builtin
+    Default : x
+#   ^ keyword
+]
+# <- punctuation.bracket

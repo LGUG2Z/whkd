@@ -1,0 +1,26 @@
+{
+  "$schema": "https://tree-sitter.github.io/tree-sitter/assets/schemas/config.schema.json",
+  "grammars": [
+    {
+      "name": "whkdrc",
+      "camelcase": "Whkdrc",
+      "title": "whkdrc",
+      "scope": "source.whkdrc",
+      "path": ".",
+      "file-types": [
+        "whkdrc"
+      ],
+      "highlights": "queries/highlights.scm",
+      "injections": "queries/injections.scm",
+      "injection-regex": "^whkdrc$"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "MIT",
+    "description": "tree-sitter grammar for whkd configuration files",
+    "links": {
+      "repository": "https://github.com/LGUG2Z/whkd"
+    }
+  }
+}

@@ -211,6 +211,9 @@ and `cargo xtask editors --check` (which also runs as a test) fails if they are 
 - **VS Code**: `editors/vscode` is an extension that recognises files named `whkdrc` or `.whkdrc` and highlights keys,
   modifiers, `when` guards, blocks and conditions. Commands are highlighted as PowerShell or batch depending on the
   `.shell` directive. See `editors/vscode/README.md`.
+- **Neovim, Helix, Zed and Emacs** can use the tree-sitter grammar in `editors/tree-sitter-whkdrc`, which also follows
+  the `.shell` directive for commands. It is checked against the real parser by a differential test. See
+  `editors/tree-sitter-whkdrc/README.md`.
 - **Other editors that read TextMate grammars** (Sublime Text, the JetBrains IDEs, `bat`, Shiki) can use
   `editors/vscode/syntaxes/whkdrc.tmLanguage.json`; the scope name is `source.whkdrc`.
 

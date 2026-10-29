@@ -9,6 +9,31 @@ use whkd_core::MouseInput;
 use whkd_core::Shell;
 use whkd_parser::syntax;
 
+/// What a shell's commands are written in, which decides the language embedded in them
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum ShellFamily {
+    PowerShell,
+    Batch,
+}
+
+/// An exhaustive match, so that adding a shell forces a decision about how its commands are
+/// highlighted
+pub fn shell_family(shell: Shell) -> ShellFamily {
+    match shell {
+        Shell::Pwsh | Shell::Powershell => ShellFamily::PowerShell,
+        Shell::Cmd => ShellFamily::Batch,
+    }
+}
+
+/// The names of the shells whose commands are written in `family`
+pub fn shells_in(family: ShellFamily) -> Vec<String> {
+    Shell::ALL
+        .into_iter()
+        .filter(|shell| shell_family(*shell) == family)
+        .map(|shell| shell.name().to_string())
+        .collect()
+}
+
 pub struct Vocabulary {
     pub directives: Vec<String>,
     pub shells: Vec<String>,
