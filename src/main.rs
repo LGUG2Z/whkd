@@ -24,6 +24,7 @@ use whkd_core::MouseInput;
 use whkd_core::Shell;
 use whkd_core::State;
 use whkd_core::Whkdrc;
+use whkd_core::DEFAULT_GESTURE_COOLDOWN_MS;
 use whkd_core::DEFAULT_WHEEL_COOLDOWN_MS;
 use win_hotkeys::error::WHKError;
 use win_hotkeys::HotkeyManager;
@@ -623,7 +624,14 @@ fn main() -> Result<()> {
         touchpad::device::start(
             dispatcher,
             hkm.pause_handle(),
-            touchpad::recogniser::Thresholds::default(),
+            touchpad::recogniser::Thresholds {
+                cooldown: Duration::from_millis(u64::from(
+                    whkdrc
+                        .gesture_cooldown
+                        .unwrap_or(DEFAULT_GESTURE_COOLDOWN_MS),
+                )),
+                ..touchpad::recogniser::Thresholds::default()
+            },
         )?;
     }
 

@@ -17,7 +17,7 @@ use whkd_core::MouseInput;
 use whkd_core::Predicate;
 use whkd_core::Shell;
 use whkd_core::Whkdrc;
-use whkd_core::MAX_WHEEL_COOLDOWN_MS;
+use whkd_core::MAX_COOLDOWN_MS;
 
 pub mod syntax;
 
@@ -33,6 +33,7 @@ use syntax::DEFAULT;
 use syntax::DELIMITER;
 use syntax::DIRECTIVES;
 use syntax::EQUALS;
+use syntax::GESTURE_COOLDOWN;
 use syntax::KEY_SEPARATOR;
 use syntax::LAYOUT;
 use syntax::NOT_EQUALS;
@@ -487,6 +488,16 @@ impl<'a> Cursor<'a> {
             None
         };
 
+        let gesture_cooldown = if self.at_keyword(GESTURE_COOLDOWN) {
+            self.pos += GESTURE_COOLDOWN.len();
+            self.skip_inline();
+            let milliseconds = self.parse_milliseconds()?;
+            self.skip_trivia();
+            Some(milliseconds)
+        } else {
+            None
+        };
+
         let mut app_bindings = vec![];
         let mut bindings = vec![];
 
@@ -576,6 +587,7 @@ impl<'a> Cursor<'a> {
                 pause_binding,
                 pause_hook,
                 wheel_cooldown,
+                gesture_cooldown,
             },
             warnings,
         })
@@ -607,11 +619,11 @@ impl<'a> Cursor<'a> {
             .with_help("the cooldown is in milliseconds, and `0` turns it off"));
         };
 
-        if milliseconds > MAX_WHEEL_COOLDOWN_MS {
+        if milliseconds > MAX_COOLDOWN_MS {
             return Err(ParseError::new(
                 format!("a cooldown of {milliseconds} milliseconds is too long"),
                 span,
-                format!("at most {MAX_WHEEL_COOLDOWN_MS}"),
+                format!("at most {MAX_COOLDOWN_MS}"),
             )
             .with_help("the cooldown is in milliseconds"));
         }
@@ -1281,6 +1293,7 @@ alt + h : echo "Hello""#;
             pause_binding: None,
             pause_hook: None,
             wheel_cooldown: None,
+            gesture_cooldown: None,
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -1306,6 +1319,7 @@ alt + h : echo "Hello""#;
             pause_binding: None,
             pause_hook: None,
             wheel_cooldown: None,
+            gesture_cooldown: None,
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -1388,6 +1402,7 @@ alt + 1 : komorebic focus-workspace 0 # digits are fine in the hotkeys section
             pause_binding: None,
             pause_hook: None,
             wheel_cooldown: None,
+            gesture_cooldown: None,
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -1413,6 +1428,7 @@ f11 : echo "hello f11""#;
             pause_binding: None,
             pause_hook: None,
             wheel_cooldown: None,
+            gesture_cooldown: None,
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -1468,6 +1484,7 @@ alt + h : echo "Hello""#;
             pause_binding: None,
             pause_hook: None,
             wheel_cooldown: None,
+            gesture_cooldown: None,
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -1497,6 +1514,7 @@ alt + h : echo "Hello""#;
             ]),
             pause_hook: None,
             wheel_cooldown: None,
+            gesture_cooldown: None,
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -1527,6 +1545,7 @@ alt + h : echo "Hello""#;
             ]),
             pause_hook: Some("komorebic toggle-pause".to_string()),
             wheel_cooldown: None,
+            gesture_cooldown: None,
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -1557,6 +1576,7 @@ alt + h : echo "Hello""#;
             ]),
             pause_hook: Some("komorebic toggle-pause".to_string()),
             wheel_cooldown: None,
+            gesture_cooldown: None,
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -2231,5 +2251,37 @@ alt + h + wheelup : x
             let src = format!(".shell cmd\n{gesture} : x\n");
             assert!(parse(&src).is_ok(), "{gesture}");
         }
+    }
+
+    #[test]
+    fn test_gesture_cooldown() {
+        let with = |directives: &str| parse(&format!(".shell cmd\n{directives}\nf1 : x\n"));
+
+        assert_eq!(
+            parse(".shell cmd\nf1 : x\n").unwrap().gesture_cooldown,
+            None
+        );
+        assert_eq!(
+            with(".gesture_cooldown 400 # ms").unwrap().gesture_cooldown,
+            Some(400)
+        );
+        assert_eq!(
+            with(".gesture_cooldown 0").unwrap().gesture_cooldown,
+            Some(0)
+        );
+
+        // either, or both, in that order, after the other directives
+        let both = with(".pause alt + p\n.wheel_cooldown 20\n.gesture_cooldown 30").unwrap();
+        assert_eq!(
+            (both.wheel_cooldown, both.gesture_cooldown),
+            (Some(20), Some(30))
+        );
+        assert_eq!(with(".wheel_cooldown 20").unwrap().gesture_cooldown, None);
+        assert_eq!(with(".gesture_cooldown 30").unwrap().wheel_cooldown, None);
+
+        assert!(with(".gesture_cooldown 30\n.wheel_cooldown 20").is_err());
+        assert!(with(".gesture_cooldown 30\n.gesture_cooldown 40").is_err());
+        assert!(with(".gesture_cooldown soon").is_err());
+        assert!(with(".gesture_cooldown 60001").is_err());
     }
 }

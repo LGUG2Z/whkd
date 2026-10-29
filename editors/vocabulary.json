@@ -4,7 +4,8 @@
     ".shell",
     ".pause",
     ".pause_hook",
-    ".wheel_cooldown"
+    ".wheel_cooldown",
+    ".gesture_cooldown"
   ],
   "gestures": [
     "swipe3",

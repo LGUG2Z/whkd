@@ -12,6 +12,7 @@ use crate::parse;
 use crate::syntax::is_ident_continue;
 use crate::syntax::is_ident_start;
 use crate::syntax::is_value_char;
+use crate::syntax::GESTURE_COOLDOWN;
 use crate::syntax::PAUSE;
 use crate::syntax::PAUSE_HOOK;
 use crate::syntax::SHELL;
@@ -240,18 +241,20 @@ fn classify(text: &str, in_block: bool) -> Option<Item> {
         });
     }
 
-    if lx.keyword(WHEEL_COOLDOWN) {
-        lx.rest = &lx.rest[WHEEL_COOLDOWN.len()..];
-        lx.skip_inline();
-        let milliseconds = lx.take_while(|c| c.is_ascii_digit());
-        if milliseconds.is_empty() {
-            return None;
-        }
+    for directive in [WHEEL_COOLDOWN, GESTURE_COOLDOWN] {
+        if lx.keyword(directive) {
+            lx.rest = &lx.rest[directive.len()..];
+            lx.skip_inline();
+            let milliseconds = lx.take_while(|c| c.is_ascii_digit());
+            if milliseconds.is_empty() {
+                return None;
+            }
 
-        return Some(Item::Directive {
-            content: format!("{WHEEL_COOLDOWN} {milliseconds}"),
-            comment: lx.tail()?,
-        });
+            return Some(Item::Directive {
+                content: format!("{directive} {milliseconds}"),
+                comment: lx.tail()?,
+            });
+        }
     }
 
     if lx.keyword(PAUSE_HOOK) {
@@ -869,6 +872,14 @@ alt + when : y
         check(
             ".shell cmd\nAlt+Swipe3Left:x\n",
             ".shell cmd\nAlt + Swipe3Left : x\n",
+        );
+    }
+
+    #[test]
+    fn the_gesture_cooldown_directive_is_formatted_like_the_wheel_one() {
+        check(
+            ".shell cmd\n.wheel_cooldown 1 # a\n.gesture_cooldown   300   # b\nf1:x\n",
+            ".shell cmd\n.wheel_cooldown 1     # a\n.gesture_cooldown 300 # b\nf1 : x\n",
         );
     }
 }

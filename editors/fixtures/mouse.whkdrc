@@ -1,5 +1,6 @@
 .shell pwsh
 .wheel_cooldown 150 # milliseconds
+.gesture_cooldown 300
 
 alt + wheelup : komorebic focus left
 alt + wheeldown : komorebic focus right

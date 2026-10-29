@@ -332,8 +332,9 @@ pub fn grammar(vocabulary: &Vocabulary) -> Value {
         "wheel-cooldown".into(),
         json!({
             "match": format!(
-                r"^[ \t]*({}){AFTER_WORD}[ \t]*([0-9]+)?",
-                directive(syntax::WHEEL_COOLDOWN)
+                r"^[ \t]*({}|{}){AFTER_WORD}[ \t]*([0-9]+)?",
+                directive(syntax::WHEEL_COOLDOWN),
+                directive(syntax::GESTURE_COOLDOWN)
             ),
             "captures": {
                 "1": { "name": "keyword.control.directive.whkdrc" },

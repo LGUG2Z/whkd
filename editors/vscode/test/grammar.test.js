@@ -290,6 +290,9 @@ test('mouse inputs are highlighted as keys of their own', async () => {
   assertScope(cooldown, '.wheel_cooldown', 'keyword.control.directive');
   assertScope(cooldown, '150', 'constant.numeric');
   assertScope(cooldown, '# milliseconds', 'comment.line');
+  const gestures = lineWith(lines, '.gesture_cooldown');
+  assertScope(gestures, '.gesture_cooldown', 'keyword.control.directive');
+  assertScope(gestures, '300', 'constant.numeric');
 
   // in any case, and with several modifiers
   const middle = lineWith(lines, 'toggle-monocle');

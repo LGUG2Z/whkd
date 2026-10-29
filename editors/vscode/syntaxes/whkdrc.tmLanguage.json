@@ -586,7 +586,7 @@
           "name": "constant.numeric.whkdrc"
         }
       },
-      "match": "^[ \\t]*(\\.wheel_cooldown)(?![\\p{L}\\p{N}_])[ \\t]*([0-9]+)?"
+      "match": "^[ \\t]*(\\.wheel_cooldown|\\.gesture_cooldown)(?![\\p{L}\\p{N}_])[ \\t]*([0-9]+)?"
     },
     "when-batch": {
       "begin": "^[ \\t]*((?:[\\p{L}_][\\p{L}\\p{N}_]*|[0-9]+)(?:[ \\t]*\\+[ \\t]*(?:[\\p{L}_][\\p{L}\\p{N}_]*|[0-9]+))*)[ \\t]+(when)(?![\\p{L}\\p{N}_])",
