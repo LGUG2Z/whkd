@@ -1,0 +1,25 @@
+{
+  "comments": {
+    "lineComment": "#"
+  },
+  "brackets": [
+    ["[", "]"]
+  ],
+  "autoClosingPairs": [
+    { "open": "[", "close": "]" },
+    { "open": "\"", "close": "\"", "notIn": ["comment"] },
+    { "open": "'", "close": "'", "notIn": ["comment"] }
+  ],
+  "surroundingPairs": [
+    ["[", "]"],
+    ["\"", "\""],
+    ["'", "'"]
+  ],
+  "indentationRules": {
+    "increaseIndentPattern": "^\\s*\\S.*\\[\\s*(#.*)?$",
+    "decreaseIndentPattern": "^\\s*\\]"
+  },
+  "folding": {
+    "offSide": false
+  }
+}

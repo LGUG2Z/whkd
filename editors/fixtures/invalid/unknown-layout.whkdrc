@@ -1,0 +1,7 @@
+.shell pwsh
+
+alt + n [
+    layout = bpsp : echo a typo
+    layout = bsp | grid | nope : echo one of three is wrong
+    layot = bsp : echo a typo in the condition
+]

@@ -1,0 +1,19 @@
+.shell pwsh
+
+alt + n [
+    # ProcessName as shown by `Get-Process`
+    Firefox                         : echo "hello firefox"
+    Google Chrome                   : echo "hello chrome"
+    app = Zen Browser | Code        : echo "zen or code"
+    layout = bsp | grid             : komorebic focus left
+    app = Firefox & layout != rows  : komorebic focus up
+    layout = UltrawideVerticalStack : echo ultrawide
+    Default                         : komorebic close
+]
+
+alt + q [ # a comment after the bracket
+    Google Chrome : Ignore
+    Default       : komorebic close
+]
+
+alt + f : echo a plain binding after the blocks

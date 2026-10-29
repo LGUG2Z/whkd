@@ -123,6 +123,18 @@ formatting can never change what a configuration means. Comments and blank lines
 Bindings are never reordered, merged or split, and commands are not touched. Lines the formatter does not understand
 (for example several constructs on one line) cause the file to be left as it is.
 
+## Editor support
+
+`whkdrc` has no file extension, so editors need to be told what it is. The files in `editors/` are generated from the
+parser itself (`cargo xtask editors`), so a new layout, keyword or key name reaches them without being copied by hand,
+and `cargo xtask editors --check` (which also runs as a test) fails if they are out of date.
+
+- **VS Code**: `editors/vscode` is an extension that recognises files named `whkdrc` or `.whkdrc` and highlights keys,
+  modifiers, `when` guards, blocks and conditions. Commands are highlighted as PowerShell or batch depending on the
+  `.shell` directive. See `editors/vscode/README.md`.
+- **Other editors that read TextMate grammars** (Sublime Text, the JetBrains IDEs, `bat`, Shiki) can use
+  `editors/vscode/syntaxes/whkdrc.tmLanguage.json`; the scope name is `source.whkdrc`.
+
 ## Valid Hotkeys
 The list of valid hotkeys can be found [here](https://docs.rs/win-hotkeys/latest/win_hotkeys/enum.VKey.html).
 

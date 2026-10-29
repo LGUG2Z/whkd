@@ -1,0 +1,11 @@
+.shell pwsh
+
+alt + when : echo a key named when
+alt + shift + when when app = Code : echo a guard on a key named when
+alt + c : echo before # this is a comment, not part of the command
+alt + e :
+alt + 5 : echo digits are keys
+ctrl + alt + oem_plus : echo oem
+alt + n [
+    Google Chrome : echo a process name with a space
+]

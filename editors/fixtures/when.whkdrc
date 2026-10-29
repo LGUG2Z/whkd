@@ -1,0 +1,6 @@
+.shell pwsh
+
+alt + left : komorebic stack left
+alt + left when layout = scrolling : komorebic consume left
+alt + f when app = Firefox | Code & layout != bsp : echo guarded
+alt + g when Firefox : echo a bare process name

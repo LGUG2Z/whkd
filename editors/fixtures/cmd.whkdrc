@@ -1,0 +1,10 @@
+.shell cmd
+
+alt + h : echo hello
+
+alt + n [
+    Firefox : echo "hello firefox"
+    Default : echo hello
+]
+
+alt + q : echo done

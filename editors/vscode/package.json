@@ -1,0 +1,54 @@
+{
+  "name": "whkdrc",
+  "displayName": "whkdrc",
+  "description": "Syntax highlighting for whkd configuration files",
+  "version": "0.1.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LGUG2Z/whkd"
+  },
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "whkdrc",
+        "aliases": [
+          "whkdrc",
+          "whkd"
+        ],
+        "filenames": [
+          "whkdrc",
+          ".whkdrc"
+        ],
+        "extensions": [
+          ".whkdrc"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "whkdrc",
+        "scopeName": "source.whkdrc",
+        "path": "./syntaxes/whkdrc.tmLanguage.json",
+        "embeddedLanguages": {
+          "meta.embedded.line.powershell": "powershell",
+          "meta.embedded.line.batchfile": "bat"
+        }
+      }
+    ]
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "devDependencies": {
+    "vscode-oniguruma": "^2.0.1",
+    "vscode-textmate": "^9.3.2"
+  }
+}
