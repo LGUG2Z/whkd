@@ -6,4 +6,6 @@
 //! fingers did. It has no Win32 in it, so it can be tested with made-up frames.
 
 pub mod frame;
+pub mod protocol;
 pub mod recogniser;
+pub mod stream;
