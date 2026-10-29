@@ -191,8 +191,7 @@ cooldown, 100 milliseconds unless the whkdrc says otherwise. It is set with a di
 - It is a single setting for all wheel bindings. A mouse wheel that clicks in steps may want it lower or off, a trackpad
   higher
 
-Gestures with three or four fingers (swipes, taps) are not something Windows passes on to programs. Windows Settings
-can map them to keyboard shortcuts, and whkd can bind those.
+Gestures with three or four fingers are not wheel events: they are recognised from the touchpad's raw input, below.
 
 ### Limits
 
@@ -201,6 +200,88 @@ can map them to keyboard shortcuts, and whkd can bind those.
 - If you use another program that handles the mouse (komorebi's focus follows mouse, window dragging), pick modifier
   and button combinations it does not use
 - A held mouse button as a modifier (`lbutton + h`) and drag bindings are not supported
+
+## Touchpad gestures (experimental)
+
+Windows does not pass three and four finger gestures on to programs, but a Precision Touchpad reports where every
+finger is, and whkd recognises the gestures from that. **This is experimental**: it has been tried against the
+description a touchpad gives of itself, and with made-up finger movements, but not yet against real fingers, so the
+thresholds are estimates that may need tuning (see `whkd touchpad` below).
+
+A gesture is bound like any other input, as the last key, with modifiers, `when` guards and `[ ... ]` blocks:
+
+```
+# once, when the swipe happens
+swipe3left  : komorebic focus left
+swipe3right : komorebic focus right
+alt + swipe4up when layout = scrolling : komorebic toggle-monocle
+
+# a stream: the command runs while the fingers are down, and is told how they move
+swipe3 : komorebic pan --stream
+```
+
+| Name | What it is |
+|---|---|
+| `swipe3left`, `swipe3right`, `swipe3up`, `swipe3down` | three fingers swiping one way; the command runs once |
+| `swipe4left`, `swipe4right`, `swipe4up`, `swipe4down` | the same with four fingers |
+| `swipe3`, `swipe4` | no direction: a **stream** for as long as the fingers are down |
+
+### Streams
+
+When three (or four) fingers land together and stay for a moment, whkd starts the command of a `swipe3` (or `swipe4`)
+binding once, and tells it where the fingers are and how they move, as plain lines on its standard input, until they
+lift and the input is closed:
+
+```
+begin fingers=3 x=4.000 y=2.000 w=10.500 h=7.200 t=118337
+move dx=0.420 dy=-0.030 x=4.420 y=1.970 t=118345
+end x=5.400 y=1.950 t=118369
+```
+
+That is one process for the whole gesture, not one for every movement, and it is raw data in centimetres that anything
+can read: whkd does not know what the command does with it. The format, with the guarantees it makes and how it can
+grow, is written up in [docs/gesture-stream.md](docs/gesture-stream.md).
+
+### Swipes with a direction
+
+A swipe with a direction runs its command once, when the fingers have moved far enough one way. Swiping a long way
+does not run it again, and a second swipe straight after the first does not either, for a cooldown, 300 milliseconds
+unless the whkdrc says otherwise:
+
+```
+.gesture_cooldown 400 # milliseconds, 0 turns it off
+```
+
+It is a directive like `.wheel_cooldown`, and goes after it. A stream is not subject to it, so a second pan always
+starts.
+
+### Windows acts on them too
+
+whkd can watch the touchpad but cannot take its gestures away from Windows, so Windows still does what it does with a
+three or four finger swipe (switch apps, show the desktop, ...) as well as what your binding does. To stop that, set
+Settings > Bluetooth & devices > Touchpad > Three-finger gestures (or Four-finger) > Swipes to **Nothing**.
+`whkd validate` tells you when your config binds swipes and that setting has not been changed.
+
+### Seeing what the touchpad does
+
+`whkd touchpad` lists the Precision Touchpads that are connected, with how many fingers each reports and how big it is,
+and then writes what the fingers on them do, as a stream binding's command would be told:
+
+```
+whkd touchpad > gesture.txt
+```
+
+The device information goes to the standard error, so the file holds only the gesture, which is the way to report that
+a gesture was not recognised, or to try a command against one you have recorded.
+
+### Limits
+
+- It needs a Precision Touchpad. An older touchpad that is only a mouse to Windows reports nothing
+- The touchpad must say how big it is in centimetres or inches. One that does not is reported once and not used
+- Tapping and pinching are not recognised, and a stream is for three or four fingers, not two (two fingers scrolling
+  are wheel events, as above)
+- Nothing starts while whkd is paused, and a gesture under way when it is, or when the touchpad is unplugged, is
+  cancelled
 
 ## Editor support
 
