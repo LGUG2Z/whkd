@@ -151,6 +151,11 @@ fn validate(path: Option<PathBuf>) -> Result<()> {
             }
 
             let whkdrc = &loaded.whkdrc;
+
+            for note in touchpad::settings::notes(whkdrc) {
+                eprintln!("{note}");
+            }
+
             let app_bindings: usize = whkdrc.app_bindings.iter().map(|(_, v)| v.len()).sum();
             println!(
                 "{}: ok ({} bindings, {app_bindings} conditional bindings, shell: {}, {} warnings)",
