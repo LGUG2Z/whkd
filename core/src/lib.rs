@@ -180,25 +180,30 @@ pub struct State<'a> {
     pub layout: Option<Layout>,
 }
 
-/// Pick the entry to run: the first whose condition matches, falling back to the first `Default`
-/// entry, wherever in the block it appears
+/// Pick the entry to run: the first whose condition matches. If none does, fall back to the first
+/// `Default` entry (wherever in the block it appears), or failing that to the first plain binding
+/// for the same keys.
 pub fn select<'a, T>(
     entries: impl IntoIterator<Item = (&'a Condition, T)>,
     state: &State,
 ) -> Option<T> {
-    let mut fallback = None;
+    let mut default = None;
+    let mut always = None;
 
     for (condition, value) in entries {
         match condition {
             Condition::Default => {
-                fallback.get_or_insert(value);
+                default.get_or_insert(value);
             }
-            condition if condition.matches(state) => return Some(value),
-            Condition::Always | Condition::Predicates(_) => {}
+            Condition::Always => {
+                always.get_or_insert(value);
+            }
+            Condition::Predicates(_) if condition.matches(state) => return Some(value),
+            Condition::Predicates(_) => {}
         }
     }
 
-    fallback
+    default.or(always)
 }
 
 #[cfg(test)]
@@ -281,5 +286,33 @@ mod tests {
         assert!(both.matches(&state));
         assert!(both.needs_layout());
         assert!(!Condition::app("Firefox").needs_layout());
+    }
+
+    #[test]
+    fn plain_binding_is_the_last_resort() {
+        let bsp = layout_is(&[Layout::Bsp], false);
+        let entries = [
+            (&Condition::Always, "plain"),
+            (&bsp, "bsp"),
+            (&Condition::Default, "default"),
+        ];
+
+        let pick = |layout| {
+            let state = State { app: "x", layout };
+            select(entries.iter().map(|(c, v)| (*c, *v)), &state)
+        };
+
+        assert_eq!(pick(Some(Layout::Bsp)), Some("bsp"));
+        assert_eq!(pick(Some(Layout::Grid)), Some("default"));
+
+        let without_default = [(&Condition::Always, "plain"), (&bsp, "bsp")];
+        let state = State {
+            app: "x",
+            layout: None,
+        };
+        assert_eq!(
+            select(without_default.iter().map(|(c, v)| (*c, *v)), &state),
+            Some("plain")
+        );
     }
 }

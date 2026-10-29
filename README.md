@@ -23,7 +23,7 @@ The format of the configuration file (and this project itself) is heavily inspir
 .pause_hook echo "you can call whatever powershell command you want here"
 
 # Specify different behaviour depending on the app
-# These "app : command" style bindings MUST come immediately below the .shell directive
+# These "app : command" style blocks can go anywhere below the directives
 alt + n [
     # ProcessName as shown by `Get-Process`
     Firefox       : echo "hello firefox"
@@ -56,10 +56,10 @@ komorebi workspace:
 
 ```
 alt + h [
-    layout = bsp | grid         : komorebic focus left
-    layout = columns            : komorebic cycle-focus previous
+    layout = bsp | grid            : komorebic focus left
+    layout = columns               : komorebic cycle-focus previous
     app = Firefox & layout != rows : komorebic focus up
-    Default                     : komorebic focus left
+    Default                        : komorebic focus left
 ]
 ```
 
@@ -71,7 +71,29 @@ alt + h [
 - komorebi is only asked for its layout when a `layout` condition is in play for the key that was pressed. If komorebi
   is not running, `layout` conditions do not match (including `!=`), and whkd prints a warning once
 
-`whkd validate` checks conditions, including layout names, without needing komorebi to be running.
+### Overriding a binding with `when`
+
+A block is not needed to add a condition to a single binding. Put `when` and a condition (written exactly as in a
+block, so `|`, `&` and `!=` all work) after the keys, next to the binding it overrides:
+
+```
+alt + left : komorebic stack left
+alt + left when layout = scrolling : komorebic consume left
+```
+
+All of the bindings for the same hotkey, whether plain, `when` or in a block, are decided together when it is pressed.
+They are tried in file order and the first match wins. The plain binding is the fallback, so it can sit anywhere in the
+file. An explicit `Default` line in a block is preferred over a plain binding for the same hotkey.
+
+### Checking a configuration
+
+`whkd validate` checks the syntax, key names and conditions, including layout names, without needing komorebi to be
+running. It also reports things that parse but are probably a mistake:
+
+- a hotkey bound more than once with no condition, so only one of them can ever run
+- an entry that can never be reached because an earlier one matches whenever it does
+- a binding with an empty command
+- (as advice) a hotkey that only has conditional bindings and no default, which swallows the key when none match
 
 ## Valid Hotkeys
 The list of valid hotkeys can be found [here](https://docs.rs/win-hotkeys/latest/win_hotkeys/enum.VKey.html).

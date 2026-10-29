@@ -71,14 +71,24 @@ fn validate(path: Option<PathBuf>) -> Result<()> {
         std::process::exit(1);
     }
 
-    match whkd_parser::load_with(&path, &key_validator()) {
-        Ok(whkdrc) => {
+    match whkd_parser::load_checked(&path, &key_validator()) {
+        Ok(loaded) => {
+            for warning in loaded.render_warnings() {
+                eprintln!("{warning}");
+            }
+
+            let whkdrc = &loaded.whkdrc;
             let app_bindings: usize = whkdrc.app_bindings.iter().map(|(_, v)| v.len()).sum();
             println!(
-                "{}: ok ({} bindings, {app_bindings} app-specific bindings, shell: {})",
+                "{}: ok ({} bindings, {app_bindings} conditional bindings, shell: {}, {} warnings)",
                 path.display(),
                 whkdrc.bindings.len(),
                 whkdrc.shell,
+                loaded
+                    .warnings
+                    .iter()
+                    .filter(|w| w.severity != whkd_parser::Severity::Advice)
+                    .count(),
             );
             Ok(())
         }
@@ -128,6 +138,14 @@ pub struct HkmData {
 }
 
 impl HkmData {
+    /// Identifies the hotkey itself, however it was written in the whkdrc
+    fn id(&self) -> (Vec<u16>, u16) {
+        let mut mods: Vec<u16> = self.mod_keys.iter().map(|key| key.to_vk_code()).collect();
+        mods.sort_unstable();
+        mods.dedup();
+        (mods, self.vkey.to_vk_code())
+    }
+
     pub fn register(&self, hkm: &mut HotkeyManager<()>, shell: Shell) -> Result<()> {
         let cmd = self.command.clone();
 
@@ -355,14 +373,22 @@ fn main() -> Result<()> {
         }
     }
 
-    let mut mapped = HashMap::new();
-    for (keys, app_bindings) in &whkdrc.app_bindings {
+    // everything bound to the same hotkey is decided together when it is pressed, in file order
+    let mut mapped: HashMap<(Vec<u16>, u16), Vec<HkmData>> = HashMap::new();
+    for (_, app_bindings) in &whkdrc.app_bindings {
         for binding in app_bindings {
             let data = HkmData::try_from(binding)?;
-            mapped
-                .entry(keys.join("+"))
-                .or_insert_with(Vec::new)
-                .push(data);
+            mapped.entry(data.id()).or_default().push(data);
+        }
+    }
+
+    // a plain binding for a hotkey that also has conditions is what runs when none of them match
+    let mut plain = vec![];
+    for binding in &whkdrc.bindings {
+        let data = HkmData::try_from(binding)?;
+        match mapped.get_mut(&data.id()) {
+            Some(group) => group.push(data),
+            None => plain.push(data),
         }
     }
 
@@ -402,8 +428,8 @@ fn main() -> Result<()> {
         })?;
     }
 
-    for binding in &whkdrc.bindings {
-        HkmData::try_from(binding)?.register(&mut hkm, whkdrc.shell)?;
+    for data in plain {
+        data.register(&mut hkm, whkdrc.shell)?;
     }
 
     hkm.event_loop();
