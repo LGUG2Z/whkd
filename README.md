@@ -165,6 +165,8 @@ alt + k [
   too, and a slow command delays the keys that are pressed after it. Add a `Default` entry, or a plain binding, for what
   is to happen then
 
+## Ignoring applications
+
 To have nothing run while some applications have focus, list them in a directive, after the other directives, instead
 of giving every binding an `Ignore` entry for them:
 
@@ -459,8 +461,10 @@ and `cargo xtask editors --check` (which also runs as a test) fails if they are 
 - **VS Code**: `editors/vscode` is an extension that recognises files named `whkdrc` or `.whkdrc` and highlights keys,
   modifiers, `when` guards, blocks and conditions. Commands are highlighted as PowerShell or batch depending on the
   `.shell` directive. See `editors/vscode/README.md`.
-- **Neovim, Helix, Zed and Emacs** can use the tree-sitter grammar in `editors/tree-sitter-whkdrc`, which also follows
-  the `.shell` directive for commands. It is checked against the real parser by a differential test. See
+- **Zed**: `editors/zed` is an extension that uses the tree-sitter grammar. Install it with `zed: install dev extension`
+  from the command palette. See `editors/zed/README.md`.
+- **Neovim, Helix and Emacs** can use the tree-sitter grammar in `editors/tree-sitter-whkdrc`, which also follows the
+  `.shell` directive for commands. It is checked against the real parser by a differential test. See
   `editors/tree-sitter-whkdrc/README.md`.
 - **Other editors that read TextMate grammars** (Sublime Text, the JetBrains IDEs, `bat`, Shiki) can use
   `editors/vscode/syntaxes/whkdrc.tmLanguage.json`; the scope name is `source.whkdrc`.
