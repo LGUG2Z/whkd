@@ -7,8 +7,13 @@ files, with highlight, injection and fold queries.
 edited by hand. `src/` is generated from `grammar.js` by `tree-sitter generate` and is committed so that editors can
 build the parser without Node.
 
-- Keys, modifiers, `when` guards, blocks and `app =` / `layout =` conditions are parsed and highlighted
+- Keys, modifiers, `{a,b}` groups, `when` guards, blocks, `app =` / `layout =` conditions, `.ignore` and `.when`
+  conditions (with `!name` and `name = value`) are parsed and highlighted, and so is a command that goes on to the next
+  line with `\`
 - Layout and shell values are part of the grammar, so an unknown one is a syntax error, like it is for `whkd validate`
+- What depends on what the whkdrc says is not: that a name has been defined with `.when`, and what a `{a,b}` group
+  stands for, are for the parser to say, so the grammar accepts some things that `whkd validate` does not. The
+  differential test lists these
 - Commands are injected as PowerShell (`.shell pwsh` / `.shell powershell`) or batch (`.shell cmd`), following the
   `.shell` directive. The injection query pairs the directive with each command, which needs a tree-sitter that
   supports sibling patterns in injection queries (Neovim does; see below)
@@ -60,5 +65,7 @@ vim.api.nvim_create_autocmd('FileType', { pattern = 'whkdrc', callback = functio
 
 The injection queries use the language names `powershell` and `batch`, so those parsers need to be installed too.
 
-**Helix** and **Zed**: the grammar lives in a subdirectory of the whkd repository (`editors/tree-sitter-whkdrc`), so
-point the grammar source at it with a `subpath` (Helix) or the equivalent. These have not been tried yet.
+**Zed**: `editors/zed` is an extension that builds this grammar. See `editors/zed/README.md`.
+
+**Helix**: the grammar lives in a subdirectory of the whkd repository (`editors/tree-sitter-whkdrc`), so point the
+grammar source at it with a `subpath`. This has not been tried yet.

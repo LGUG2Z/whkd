@@ -2,9 +2,12 @@
 
 Syntax highlighting for [whkd](https://github.com/LGUG2Z/whkd) configuration files.
 
-- Keys, modifiers, `when` guards, blocks and `app =` / `layout =` conditions are highlighted, and mistakes the
-  parser would reject (an unknown layout, an unknown condition, an unknown shell) are marked as invalid
-- Commands are highlighted as PowerShell or batch, following the `.shell` directive
+- Keys, modifiers, `{a,b}` groups, `when` guards, blocks, `app =` / `layout =` conditions, `.ignore` and `.when`
+  conditions (and `!name` and `name = value` for them) are highlighted, and mistakes the parser would reject (an
+  unknown layout, a misspelt `app` or `layout`, an unknown shell) are marked as invalid. A name that was defined with
+  `.when` cannot be told from one that was not, so only `whkd validate` reports an unknown condition
+- Commands are highlighted as PowerShell or batch, following the `.shell` directive, and a command that ends in `\`
+  goes on to the next line. The command of a `.when` condition is always highlighted as batch, as it is run in `cmd`
 - Files named `whkdrc` or `.whkdrc`, or ending in `.whkdrc`, are recognised
 
 The grammar in `syntaxes/` is generated from the parser by `cargo xtask editors` and should not be edited by hand.
