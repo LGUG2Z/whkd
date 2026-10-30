@@ -146,6 +146,25 @@ alt + k [
 - The conditions are looked at in the order that the entries are, only when what is before them on their line holds, and
   not at all for an entry that comes after the one that is used. Put what is cheap to find out first
 
+### How the commands are run
+
+- A command is always run in `cmd`, whatever `.shell` is, as `cmd /d /s /c "command"`, with no window, and nothing to
+  read from. `cmd` takes about 12 milliseconds to start, where `powershell` takes about 150 and `pwsh` more than 200
+  (and over a second with a profile), which is too long to wait for each time a key is pressed. To use PowerShell for
+  one, call it from the command, as in `.when docked : pwsh -NoProfile -Command "exit [int](-not (Test-Path D:\dock))"`,
+  and know that each press that gets that far waits for it
+- A command is run when a key is pressed, and not before: once for each key press that asks about it, however many times
+  its condition is used, and never when it is not asked about. What it said is not kept for the next key press
+- It is given the name of the application with focus in the environment variable `WHKD_APP`
+- What a command writes is what it writes to its standard output, and the first 64 kilobytes of it, read in the code page
+  that `cmd` uses (`chcp 65001 >nul & command` for UTF-8). What it writes to the error output is thrown away
+- A command has half a second. One that has not finished by then is stopped, with the programs that it started, `whkd`
+  says so once in its output, and nothing can be said about it: it does not hold, and neither does `name = value` nor
+  `name != value`
+- Hotkeys are swallowed before it is known which entry applies, so a key whose entries all fail to match is swallowed
+  too, and a slow command delays the keys that are pressed after it. Add a `Default` entry, or a plain binding, for what
+  is to happen then
+
 To have nothing run while some applications have focus, list them in a directive, after the other directives, instead
 of giving every binding an `Ignore` entry for them:
 

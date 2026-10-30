@@ -19,6 +19,7 @@ use std::sync::OnceLock;
 use std::time::Duration;
 use whkd_core::is_ignored;
 use whkd_core::select;
+use whkd_core::Checks;
 use whkd_core::Condition;
 use whkd_core::GestureInput;
 use whkd_core::HotkeyBinding;
@@ -33,6 +34,7 @@ use win_hotkeys::error::WHKError;
 use win_hotkeys::HotkeyManager;
 use win_hotkeys::VKey;
 
+mod check;
 mod komorebi;
 mod mouse;
 mod observe;
@@ -506,12 +508,15 @@ fn select_command(entries: &[HkmData]) -> Option<String> {
         .unwrap_or_default()
         .app_name;
 
-    choose_command(
-        entries,
-        &app_name,
-        IGNORED_APPS.get().map_or(&[], Vec::as_slice),
-        komorebi::focused_workspace_layout,
-    )
+    check::with_press_checks(&app_name, |checks| {
+        choose_command(
+            entries,
+            &app_name,
+            IGNORED_APPS.get().map_or(&[], Vec::as_slice),
+            komorebi::focused_workspace_layout,
+            checks,
+        )
+    })
 }
 
 /// The command for the entries bound to a key, when the application with the focused window is
@@ -521,6 +526,7 @@ fn choose_command(
     app: &str,
     ignored: &[String],
     layout: impl FnOnce() -> Option<Layout>,
+    checks: &dyn Checks,
 ) -> Option<String> {
     if is_ignored(ignored, app) {
         return None;
@@ -533,7 +539,7 @@ fn choose_command(
         None
     };
 
-    let state = State::new(app, layout);
+    let state = State::new(app, layout).with_checks(checks);
 
     select(entries.iter().map(|e| (&e.condition, &e.command)), &state)
         .filter(|cmd| cmd.as_str() != whkd_parser::syntax::IGNORE)
@@ -655,6 +661,7 @@ fn main() -> Result<()> {
     spawn_shell(whkdrc.shell)?;
 
     let _ = IGNORED_APPS.set(whkdrc.ignore.clone());
+    check::define(&whkdrc.checks);
 
     let mut hkm = HotkeyManager::new();
     let pause_handle = hkm.pause_handle();
@@ -825,7 +832,51 @@ fn main() -> Result<()> {
 mod tests {
     use super::*;
     use std::cell::Cell;
+    use std::cell::RefCell;
+    use whkd_core::NoChecks;
     use whkd_core::Predicate;
+
+    /// Without conditions of the whkdrc's own
+    fn choose_command(
+        entries: &[HkmData],
+        app: &str,
+        ignored: &[String],
+        layout: impl FnOnce() -> Option<Layout>,
+    ) -> Option<String> {
+        super::choose_command(entries, app, ignored, layout, &NoChecks)
+    }
+
+    /// Which conditions hold, and which were asked about
+    struct Holding<'a> {
+        holding: &'a [&'a str],
+        asked: RefCell<Vec<String>>,
+    }
+
+    impl Checks for Holding<'_> {
+        fn holds(&self, name: &str) -> bool {
+            self.asked.borrow_mut().push(name.to_string());
+            self.holding.contains(&name)
+        }
+
+        fn says(&self, name: &str) -> Option<String> {
+            self.asked.borrow_mut().push(name.to_string());
+            self.holding.contains(&name).then(|| String::from("work"))
+        }
+    }
+
+    fn docked() -> Condition {
+        Condition::Predicates(vec![Predicate::Check {
+            name: String::from("docked"),
+            negated: false,
+        }])
+    }
+
+    fn not_docked() -> Condition {
+        Condition::Predicates(vec![Predicate::Check {
+            name: String::from("docked"),
+            negated: true,
+        }])
+    }
 
     fn entry(condition: Condition, command: &str) -> HkmData {
         HkmData::try_from(&HotkeyBinding {
@@ -951,5 +1002,122 @@ mod tests {
             choose_command(&entries, "Code", &[], || None).as_deref(),
             Some("default")
         );
+    }
+
+    #[test]
+    fn a_condition_of_the_whkdrcs_own_decides_which_entry_runs() {
+        let entries = [
+            entry(docked(), "docked"),
+            entry(not_docked(), "undocked"),
+            entry(Condition::Default, "default"),
+        ];
+
+        let pick = |holding: &[&str]| {
+            let checks = Holding {
+                holding,
+                asked: RefCell::new(vec![]),
+            };
+            super::choose_command(&entries, "Code", &[], || None, &checks)
+        };
+
+        assert_eq!(pick(&["docked"]).as_deref(), Some("docked"));
+        assert_eq!(pick(&[]).as_deref(), Some("undocked"));
+    }
+
+    #[test]
+    fn the_default_runs_when_no_condition_holds() {
+        let entries = [
+            entry(docked(), "docked"),
+            entry(Condition::Default, "default"),
+        ];
+        let checks = Holding {
+            holding: &[],
+            asked: RefCell::new(vec![]),
+        };
+
+        assert_eq!(
+            super::choose_command(&entries, "Code", &[], || None, &checks).as_deref(),
+            Some("default")
+        );
+    }
+
+    #[test]
+    fn a_condition_is_not_asked_about_for_an_application_that_is_ignored() {
+        let entries = [entry(docked(), "docked")];
+        let checks = Holding {
+            holding: &["docked"],
+            asked: RefCell::new(vec![]),
+        };
+
+        assert_eq!(
+            super::choose_command(&entries, "Firefox", &names(&["Firefox"]), || None, &checks),
+            None
+        );
+        assert!(checks.asked.borrow().is_empty());
+    }
+
+    #[test]
+    fn a_condition_is_only_asked_about_when_it_is_reached() {
+        let firefox_and_docked = Condition::Predicates(vec![
+            Predicate::App {
+                names: vec![String::from("Firefox")],
+                negated: false,
+            },
+            Predicate::Check {
+                name: String::from("docked"),
+                negated: false,
+            },
+        ]);
+        let entries = [
+            entry(firefox_and_docked, "firefox docked"),
+            entry(Condition::Default, "default"),
+        ];
+        let checks = Holding {
+            holding: &["docked"],
+            asked: RefCell::new(vec![]),
+        };
+
+        // not in Firefox, so the condition is not asked
+        assert_eq!(
+            super::choose_command(&entries, "Code", &[], || None, &checks).as_deref(),
+            Some("default")
+        );
+        assert!(checks.asked.borrow().is_empty());
+
+        assert_eq!(
+            super::choose_command(&entries, "Firefox", &[], || None, &checks).as_deref(),
+            Some("firefox docked")
+        );
+        assert_eq!(*checks.asked.borrow(), ["docked"]);
+    }
+
+    #[test]
+    fn what_a_condition_writes_decides_which_entry_runs() {
+        let is = |values: &[&str], negated| {
+            Condition::Predicates(vec![Predicate::CheckIs {
+                name: String::from("mode"),
+                values: values.iter().map(ToString::to_string).collect(),
+                negated,
+            }])
+        };
+        let entries = [
+            entry(is(&["home"], false), "home"),
+            entry(is(&["work", "office"], false), "work"),
+            entry(is(&["work"], true), "not work"),
+            entry(Condition::Default, "default"),
+        ];
+
+        // the fake says `work` when the condition holds, and nothing when it does not
+        let pick = |holding: &[&str]| {
+            let checks = Holding {
+                holding,
+                asked: RefCell::new(vec![]),
+            };
+            super::choose_command(&entries, "Code", &[], || None, &checks)
+        };
+
+        assert_eq!(pick(&["mode"]).as_deref(), Some("work"));
+        // nothing could be said about it, so neither `=` nor `!=` holds
+        assert_eq!(pick(&[]).as_deref(), Some("default"));
     }
 }
