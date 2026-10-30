@@ -8,5 +8,5 @@ repository = "https://github.com/LGUG2Z/whkd"
 
 [grammars.whkdrc]
 repository = "https://github.com/LGUG2Z/whkd"
-rev = "f9a0b9aa3f1014a1e5a632f0b664c45452d6b3b5"
+rev = "9c697e7879f65116e92eab2789380b61e5822686"
 path = "editors/tree-sitter-whkdrc"
