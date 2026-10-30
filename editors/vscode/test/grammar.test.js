@@ -335,6 +335,33 @@ test('gestures are highlighted as keys of their own', async () => {
   assertNotScope(wheel, 'wheelup', 'constant.character.key.gesture');
 });
 
+test('a command goes on to the next line with a trailing backslash', async () => {
+  const lines = await fixture('continuation.whkdrc');
+  const trimmed = (text) => lines.find((line) => rest(line).trim() === text);
+
+  // what a command continues with is part of the command, not a key, a block entry or a condition
+  for (const text of ['two', '--some-option \\', 'left', 'b', 'e']) {
+    const line = trimmed(text);
+    assert.ok(line, `no line ${JSON.stringify(text)}`);
+    for (const tok of line.filter((t) => t.text.trim())) {
+      assert.ok(has(tok, 'meta.embedded.line.powershell'), `${JSON.stringify(tok.text)}: ${tok.scopes.join(' ')}`);
+      assert.ok(!has(tok, 'constant.character.key'), `${JSON.stringify(tok.text)}: ${tok.scopes.join(' ')}`);
+      assert.ok(!has(tok, 'entity.name.type.process'), `${JSON.stringify(tok.text)}: ${tok.scopes.join(' ')}`);
+    }
+  }
+
+  // and what comes after a command is read as it always was
+  assertScope(lineWith(lines, 'alt + j'), 'j', 'constant.character.key');
+  assertScope(lineWith(lines, 'Default'), 'Default', 'keyword.other.default');
+  assertScope(lineWith(lines, 'alt + w when'), 'when', 'keyword.control.when');
+  assertScope(lineWith(lines, 'a backslash that ends a word'), '# a backslash that ends a word is part of the command', 'comment.line');
+
+  // a backslash that ends a word does not continue the command
+  const explorer = lineWith(lines, 'explorer');
+  assertScope(explorer, 'e', 'constant.character.key');
+  assertScope(lineWith(lines, 'alt + w when'), 'w', 'constant.character.key');
+});
+
 test('mistakes are marked invalid, like the parser rejects them', async () => {
   const layouts = await fixture('invalid/unknown-layout.whkdrc');
   assertScope(lineWith(layouts, 'a typo'), 'bpsp', 'invalid.illegal.unknown-layout');
@@ -360,7 +387,7 @@ test('without a valid .shell the commands are plain strings', async () => {
 });
 
 test('valid fixtures contain nothing marked invalid', async () => {
-  for (const name of ['basic', 'blocks', 'when', 'cmd', 'tricky', 'mouse', 'gestures']) {
+  for (const name of ['basic', 'blocks', 'when', 'cmd', 'tricky', 'mouse', 'gestures', 'continuation']) {
     const lines = await fixture(`${name}.whkdrc`);
     for (const line of lines) {
       for (const tok of line) {

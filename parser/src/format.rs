@@ -8,6 +8,7 @@
 //! Anything that does not parse, or that is shaped in a way this formatter does not understand
 //! (for example two constructs on one line), is returned untouched.
 
+use crate::continuation;
 use crate::parse;
 use crate::syntax::is_ident_continue;
 use crate::syntax::is_ident_start;
@@ -49,6 +50,11 @@ enum Item {
     Close {
         comment: Option<String>,
     },
+    /// A line of a command that the line before it continues with a `\`
+    Continuation {
+        command: String,
+        comment: Option<String>,
+    },
 }
 
 struct Line {
@@ -74,6 +80,8 @@ fn reformat(src: &str) -> Option<String> {
     let mut in_block = false;
     let mut group = 0;
     let mut pending_blank = false;
+    // whether the line before ends with a `\`, so that this one is part of its command
+    let mut continuing = false;
 
     for raw in body.split('\n') {
         let line = raw.trim_end();
@@ -81,6 +89,7 @@ fn reformat(src: &str) -> Option<String> {
         let indent = if in_block { INDENT } else { 0 };
 
         if text.is_empty() {
+            continuing = false;
             pending_blank = !lines.is_empty();
             if !in_block {
                 group += 1;
@@ -93,8 +102,28 @@ fn reformat(src: &str) -> Option<String> {
                 group += 1;
             }
             Item::Comment(text.to_string())
+        } else if continuing {
+            let (command, comment) = Lexer { rest: text }.command();
+            Item::Continuation { command, comment }
         } else {
             classify(text, in_block)?
+        };
+
+        continuing = match &item {
+            Item::Binding {
+                command,
+                comment: None,
+                ..
+            }
+            | Item::Continuation {
+                command,
+                comment: None,
+            } => continuation(command).is_some(),
+            Item::Directive {
+                content,
+                comment: None,
+            } => continuation(content).is_some(),
+            _ => false,
         };
 
         if pending_blank {
@@ -126,6 +155,11 @@ fn reformat(src: &str) -> Option<String> {
                 in_block = false;
                 group += 1;
             }
+            Item::Continuation { .. } => lines.push(Line {
+                item,
+                indent: indent + INDENT,
+                group,
+            }),
             item => lines.push(Line {
                 item,
                 indent,
@@ -180,6 +214,9 @@ fn reformat(src: &str) -> Option<String> {
                     }
                 }
                 text
+            }
+            Item::Continuation { command, comment } => {
+                with_comment(format!("{pad}{command}"), comment.as_ref())
             }
             Item::Open { keys, comment } => with_comment(format!("{keys} ["), comment.as_ref()),
             Item::Close { comment } => with_comment(String::from("]"), comment.as_ref()),
@@ -880,6 +917,63 @@ alt + when : y
         check(
             ".shell cmd\n.wheel_cooldown 1 # a\n.gesture_cooldown   300   # b\nf1:x\n",
             ".shell cmd\n.wheel_cooldown 1     # a\n.gesture_cooldown 300 # b\nf1 : x\n",
+        );
+    }
+
+    #[test]
+    fn continued_commands_keep_their_lines_and_are_indented() {
+        check(
+            ".shell cmd\nalt+h:echo one \\\n      two \\\n  three\nf1:x\n",
+            ".shell cmd\nalt + h : echo one \\\n    two \\\n    three\nf1      : x\n",
+        );
+    }
+
+    #[test]
+    fn continued_commands_in_blocks_and_the_pause_hook() {
+        check(
+            ".shell cmd\n.pause_hook   echo a \\\n b\nf1 [\n Code:echo c \\\n d \\\n\te\n Default:f\n]\n",
+            ".shell cmd\n.pause_hook echo a \\\n    b\nf1 [\n    Code    : echo c \\\n        d \\\n        e\n    Default : f\n]\n",
+        );
+    }
+
+    #[test]
+    fn a_comment_ends_a_continued_command_and_is_kept() {
+        check(
+            ".shell cmd\nf1:echo one \\\n  two   # note\nf2:x\n",
+            ".shell cmd\nf1 : echo one \\\n    two # note\nf2 : x\n",
+        );
+    }
+
+    #[test]
+    fn a_backslash_that_ends_a_word_does_not_continue() {
+        check(
+            ".shell cmd\nf1:explorer C:\\Users\\\nf2   :x\n",
+            ".shell cmd\nf1 : explorer C:\\Users\\\nf2 : x\n",
+        );
+    }
+
+    #[test]
+    fn a_continuation_that_continues_onto_nothing_still_formats() {
+        check(
+            ".shell cmd\nf1:echo \\\n\nf2:x\n",
+            ".shell cmd\nf1 : echo \\\n\nf2 : x\n",
+        );
+    }
+
+    #[test]
+    fn continued_commands_keep_crlf_line_endings() {
+        check(
+            ".shell cmd\r\nf1:echo one \\\r\n two\r\nf2:x\r\n",
+            ".shell cmd\r\nf1 : echo one \\\r\n    two\r\nf2 : x\r\n",
+        );
+    }
+
+    #[test]
+    fn a_continuation_line_that_looks_like_a_binding_is_not_one() {
+        // `f2 : y` is a continuation of the command of `f1`, so it is not aligned with anything
+        check(
+            ".shell cmd\nf1:echo \\\n  f2 : y\nlonger_key:z\n",
+            ".shell cmd\nf1         : echo \\\n    f2 : y\nlonger_key : z\n",
         );
     }
 }

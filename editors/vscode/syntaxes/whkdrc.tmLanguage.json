@@ -53,7 +53,7 @@
         }
       },
       "contentName": "meta.embedded.line.batchfile",
-      "end": "(?=#)|$",
+      "end": "(?=#)|(?<!^\\\\|[ \\t]\\\\|^\\\\\\n|[ \\t]\\\\\\n)$",
       "patterns": [
         {
           "captures": {
@@ -83,7 +83,7 @@
         }
       },
       "contentName": "string.unquoted.command.whkdrc",
-      "end": "(?=#)|$",
+      "end": "(?=#)|(?<!^\\\\|[ \\t]\\\\|^\\\\\\n|[ \\t]\\\\\\n)$",
       "patterns": [
         {
           "captures": {
@@ -110,7 +110,7 @@
         }
       },
       "contentName": "meta.embedded.line.powershell",
-      "end": "(?=#)|$",
+      "end": "(?=#)|(?<!^\\\\|[ \\t]\\\\|^\\\\\\n|[ \\t]\\\\\\n)$",
       "patterns": [
         {
           "captures": {
@@ -220,7 +220,7 @@
         }
       },
       "contentName": "meta.embedded.line.batchfile",
-      "end": "(?=#)|$",
+      "end": "(?=#)|(?<!^\\\\|[ \\t]\\\\|^\\\\\\n|[ \\t]\\\\\\n)$",
       "patterns": [
         {
           "captures": {
@@ -243,7 +243,7 @@
         }
       },
       "contentName": "string.unquoted.command.whkdrc",
-      "end": "(?=#)|$",
+      "end": "(?=#)|(?<!^\\\\|[ \\t]\\\\|^\\\\\\n|[ \\t]\\\\\\n)$",
       "patterns": [
         {
           "captures": {
@@ -263,7 +263,7 @@
         }
       },
       "contentName": "meta.embedded.line.powershell",
-      "end": "(?=#)|$",
+      "end": "(?=#)|(?<!^\\\\|[ \\t]\\\\|^\\\\\\n|[ \\t]\\\\\\n)$",
       "patterns": [
         {
           "captures": {
@@ -440,7 +440,7 @@
         }
       },
       "contentName": "meta.embedded.line.batchfile",
-      "end": "(?=#)|$",
+      "end": "(?=#)|(?<!^\\\\|[ \\t]\\\\|^\\\\\\n|[ \\t]\\\\\\n)$",
       "patterns": [
         {
           "captures": {
@@ -463,7 +463,7 @@
         }
       },
       "contentName": "string.unquoted.command.whkdrc",
-      "end": "(?=#)|$",
+      "end": "(?=#)|(?<!^\\\\|[ \\t]\\\\|^\\\\\\n|[ \\t]\\\\\\n)$",
       "patterns": [
         {
           "captures": {
@@ -483,7 +483,7 @@
         }
       },
       "contentName": "meta.embedded.line.powershell",
-      "end": "(?=#)|$",
+      "end": "(?=#)|(?<!^\\\\|[ \\t]\\\\|^\\\\\\n|[ \\t]\\\\\\n)$",
       "patterns": [
         {
           "captures": {

@@ -95,8 +95,10 @@ module.exports = grammar({
     hotkeys: ($) => seq($.key, repeat(seq('@@KEY_SEPARATOR@@', $.key))),
     key: (_) => token(choice(/[\p{L}_][\p{L}\p{N}_]*/, /[0-9]+/)),
 
-    // the rest of the line, up to a comment
-    command: (_) => /[^#\s][^#\r\n]*/,
+    // the rest of the line, up to a comment. A `\` that ends a line, after a space (or at the start
+    // of the command), goes on to the next
+    command: (_) =>
+      /(\\[ \t]*\r?\n[ \t]*)?[^#\s]([^#\r\n]|[ \t]\\[ \t]*\r?\n[ \t]*)*/,
     comment: (_) => token(/#[^\r\n]*/),
 
     // the values of the conditions. Several words make one process name (`Google Chrome`), but

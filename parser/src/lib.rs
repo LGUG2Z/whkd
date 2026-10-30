@@ -764,10 +764,51 @@ impl<'a> Cursor<'a> {
 
     /// The rest of the line, up to a comment, trimmed. An empty command is accepted, as it always
     /// has been, but flagged
+    ///
+    /// A `\` that is the last thing on a line, after whitespace, continues the command on the next
+    /// line, and the lines are joined with a single space. A `\` that ends a word, as in
+    /// `explorer C:\Users\`, is part of the command, as it always has been
     fn parse_command(&mut self) -> String {
         self.skip_inline();
 
-        let command = self.take_while(|c| c != '\n' && c != COMMENT).trim_end();
+        let mut command = String::new();
+
+        loop {
+            let start = self.pos;
+            let line = self.take_while(|c| c != '\n' && c != COMMENT).trim_end();
+            let continued = continuation(line).filter(|_| matches!(self.peek(), Some('\n') | None));
+
+            if !command.is_empty() && !continued.unwrap_or(line).is_empty() {
+                command.push(' ');
+            }
+            command.push_str(continued.unwrap_or(line));
+
+            if continued.is_none() {
+                break;
+            }
+
+            // the `\` is the last thing in the trimmed line
+            let backslash = start + line.len() - 1;
+
+            if self.peek().is_some() {
+                self.pos += 1;
+                self.skip_inline();
+            }
+
+            if matches!(self.peek(), None | Some('\n' | '\r' | COMMENT)) {
+                self.warnings.push(
+                    ParseError::new(
+                        "nothing to continue onto",
+                        backslash..backslash + 1,
+                        "this `\\` continues the command, but the next line is empty or a comment",
+                    )
+                    .with_severity(Severity::Warning)
+                    .with_help("remove the `\\`, or put the rest of the command on the next line"),
+                );
+                break;
+            }
+        }
+
         if command.is_empty() {
             let span = self.here();
             self.warnings.push(
@@ -777,7 +818,7 @@ impl<'a> Cursor<'a> {
             );
         }
 
-        command.to_string()
+        command
     }
 
     fn parse_app_binding(&mut self, keys: &[String]) -> Result<Vec<HotkeyBinding>, ParseError> {
@@ -978,6 +1019,13 @@ impl<'a> Cursor<'a> {
 
         Ok(values)
     }
+}
+
+/// The command on a line that continues on the next, without the `\`: a `\` that ends the line
+/// after whitespace (or is all there is)
+pub(crate) fn continuation(line: &str) -> Option<&str> {
+    let text = line.strip_suffix('\\')?;
+    (text.is_empty() || text.ends_with([' ', '\t'])).then(|| text.trim_end())
 }
 
 enum Term {
@@ -2283,5 +2331,101 @@ alt + h + wheelup : x
         assert!(with(".gesture_cooldown 30\n.gesture_cooldown 40").is_err());
         assert!(with(".gesture_cooldown soon").is_err());
         assert!(with(".gesture_cooldown 60001").is_err());
+    }
+
+    fn commands(src: &str) -> Vec<String> {
+        let parsed = parse(src).unwrap();
+        parsed
+            .app_bindings
+            .iter()
+            .flat_map(|(_, bindings)| bindings)
+            .chain(&parsed.bindings)
+            .map(|binding| binding.command.clone())
+            .collect()
+    }
+
+    #[test]
+    fn test_continued_command() {
+        assert_eq!(
+            commands(".shell cmd\nf1 : echo one \\\n    two \\\n  three\nf2 : next\n"),
+            ["echo one two three", "next"]
+        );
+    }
+
+    #[test]
+    fn test_command_may_start_on_the_next_line() {
+        assert_eq!(commands(".shell cmd\nf1 : \\\n    echo hi\n"), ["echo hi"]);
+    }
+
+    #[test]
+    fn test_backslash_ending_a_word_is_part_of_the_command() {
+        // paths end in a backslash, and always could
+        let src = ".shell cmd\nf1 : explorer C:\\Users\\\nf2 : echo \\\\\nf3 : x\n";
+        assert_eq!(commands(src), ["explorer C:\\Users\\", "echo \\\\", "x"]);
+        assert!(warnings(src).is_empty());
+    }
+
+    #[test]
+    fn test_backslash_before_a_comment_is_not_a_continuation() {
+        let src = ".shell cmd\nf1 : echo hi \\ # a comment\nf2 : next\n";
+        assert_eq!(commands(src), ["echo hi \\", "next"]);
+    }
+
+    #[test]
+    fn test_a_comment_ends_a_continued_command() {
+        let src = ".shell cmd\nf1 : echo one \\\n  two # done\nf2 : next\n";
+        assert_eq!(commands(src), ["echo one two", "next"]);
+    }
+
+    #[test]
+    fn test_continuation_in_blocks_guards_and_pause_hook() {
+        let src = ".shell cmd\n.pause_hook echo a \\\n  b\nf1 [\n  Code : echo c \\\n    d\n  Default : e\n]\nf2 when layout = bsp : echo f \\\n  g\nf3 : h\n";
+        let parsed = parse(src).unwrap();
+        assert_eq!(parsed.pause_hook.as_deref(), Some("echo a b"));
+        assert_eq!(commands(src), ["echo c d", "e", "echo f g", "h"]);
+    }
+
+    #[test]
+    fn test_continuation_with_crlf() {
+        let src = ".shell cmd\r\nf1 : echo one \\\r\n  two\r\nf2 : x\r\n";
+        assert_eq!(commands(src), ["echo one two", "x"]);
+        assert!(warnings(src).is_empty());
+    }
+
+    #[test]
+    fn test_continuation_onto_nothing_is_flagged() {
+        for (src, what) in [
+            (".shell cmd\nf1 : echo one \\\n\nf2 : x\n", "a blank line"),
+            (
+                ".shell cmd\nf1 : echo one \\\n# note\nf2 : x\n",
+                "a comment",
+            ),
+            (
+                ".shell cmd\nf2 : x\nf1 : echo one \\\n",
+                "the end of the file",
+            ),
+            (
+                ".shell cmd\nf2 : x\nf1 : echo one \\",
+                "the end without a newline",
+            ),
+        ] {
+            let found = warnings(src);
+            assert_eq!(found.len(), 1, "{what}: {found:?}");
+            assert_eq!(found[0].message, "nothing to continue onto", "{what}");
+            assert_eq!(&src[found[0].span.clone()], "\\", "{what}");
+            assert!(commands(src).contains(&"echo one".to_string()), "{what}");
+        }
+    }
+
+    #[test]
+    fn test_errors_after_a_continued_command_point_at_the_right_line() {
+        let src = ".shell cmd\nf1 : echo one \\\n  two\nf2 nonsense\n";
+        let error = err(src);
+        assert_eq!(&src[error.span.clone()], "n");
+        assert!(
+            error.report("whkdrc", src, false).contains("whkdrc:4:4"),
+            "{}",
+            error.report("whkdrc", src, false)
+        );
     }
 }

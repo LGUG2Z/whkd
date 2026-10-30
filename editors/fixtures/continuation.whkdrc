@@ -1,0 +1,20 @@
+.shell pwsh
+.pause_hook echo one \
+    two
+
+# a command can go on to the next line with a trailing backslash
+alt + h : komorebic focus left \
+    --some-option \
+    left
+alt + j : komorebic focus down
+
+alt + n [
+    Firefox : echo a \
+        b
+    Default : echo c
+]
+
+# a backslash that ends a word is part of the command
+alt + e : explorer C:\Users\
+alt + w when layout = bsp : echo d \
+    e

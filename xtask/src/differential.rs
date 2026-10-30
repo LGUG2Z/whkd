@@ -59,6 +59,8 @@ const SNIPPETS: &[&str] = &[
     ".shell cmd\n",
     ".pause alt + p\n",
     ".pause_hook x\n",
+    " \\",
+    " \\\n",
     "Google Chrome",
     "UltrawideVerticalStack",
     "scrolling",

@@ -95,6 +95,27 @@ running. It also reports things that parse but are probably a mistake:
 - a binding with an empty command
 - (as advice) a hotkey that only has conditional bindings and no default, which swallows the key when none match
 
+## Long commands
+
+A `\` at the end of a line, after a space, continues the command on the next line. The lines are joined with a single
+space, and the indentation of the lines that continue does not matter:
+
+```
+alt + h : komorebic resize-axis horizontal increase \
+    && komorebic resize-axis vertical increase
+
+alt + n [
+    Firefox : echo "one" \
+        "two"
+    Default : echo three
+]
+```
+
+- A `\` that ends a word is part of the command, as it always was, so `explorer C:\Users\` still ends in a backslash
+- A `#` ends a command, even on a line with a `\` before it, so a comment cannot be continued
+- A `\` that continues onto a blank line, a comment or the end of the file does nothing, and `whkd validate` says so
+- `whkd fmt` leaves the line breaks where they are and indents the lines that continue
+
 ## Formatting
 
 `whkd fmt` formats a configuration file, using the same lookup as `whkd validate` (the default location, the global

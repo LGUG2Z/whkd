@@ -1,0 +1,65 @@
+================================================================================
+a command that goes on to the next line
+================================================================================
+
+.shell pwsh
+.pause_hook echo one \
+    two
+
+alt + h : komorebic focus left \
+    --some-option \
+    left
+alt + j : komorebic focus down
+alt + n [
+    Firefox : echo a \
+        b
+    Default : echo c
+]
+alt + e : explorer C:\Users\
+alt + w when layout = bsp : echo d \
+    e # a comment
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (shell_directive
+    (shell_name))
+  (pause_hook_directive
+    (command))
+  (binding
+    (hotkeys
+      (key)
+      (key))
+    (command))
+  (binding
+    (hotkeys
+      (key)
+      (key))
+    (command))
+  (block
+    (hotkeys
+      (key)
+      (key))
+    (entry
+      (condition
+        (process_name))
+      (command))
+    (entry
+      (default)
+      (command)))
+  (binding
+    (hotkeys
+      (key)
+      (key))
+    (command))
+  (binding
+    (hotkeys
+      (key)
+      (key))
+    (when_clause
+      (condition
+        (layout_predicate
+          (comparison)
+          (layout_name))))
+    (command))
+  (comment))

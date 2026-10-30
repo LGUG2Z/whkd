@@ -23,6 +23,11 @@ const AFTER_WORD: &str = r"(?![\p{L}\p{N}_])";
 /// A rule that can never match, so a `begin` that uses it as `end` lasts to the end of the file
 const NEVER: &str = r"\b\B";
 
+/// Where a command ends: at a comment, or at the end of a line that does not end with a `\`, which
+/// would continue the command on the next line. Editors hand the grammar a line with its line break,
+/// and `$` also matches after that, so the lookbehind allows for the break
+const COMMAND_END: &str = r"(?=#)|(?<!^\\|[ \t]\\|^\\\n|[ \t]\\\n)$";
+
 /// How the command part of a binding is scoped
 struct Variant {
     /// Suffix for the rule names that depend on the shell
@@ -245,7 +250,7 @@ pub fn grammar(vocabulary: &Vocabulary) -> Value {
             json!({
                 "begin": escape(&syntax::DELIMITER.to_string()),
                 "beginCaptures": { "0": { "name": "punctuation.separator.delimiter.whkdrc" } },
-                "end": "(?=#)|$",
+                "end": COMMAND_END,
                 "contentName": variant.content_name(),
                 "patterns": variant.command_patterns()
             }),
@@ -259,7 +264,7 @@ pub fn grammar(vocabulary: &Vocabulary) -> Value {
                     "1": { "patterns": [{ "include": "#hotkey" }] },
                     "2": { "name": "punctuation.separator.delimiter.whkdrc" }
                 },
-                "end": "(?=#)|$",
+                "end": COMMAND_END,
                 "contentName": variant.content_name(),
                 "patterns": variant.command_patterns()
             }),
@@ -318,7 +323,7 @@ pub fn grammar(vocabulary: &Vocabulary) -> Value {
             json!({
                 "begin": format!(r"^[ \t]*({}){AFTER_WORD}", directive(pause_hook)),
                 "beginCaptures": { "1": { "name": "keyword.control.directive.whkdrc" } },
-                "end": "(?=#)|$",
+                "end": COMMAND_END,
                 "contentName": variant.content_name(),
                 "patterns": variant.command_patterns()
             }),
