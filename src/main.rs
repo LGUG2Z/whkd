@@ -35,6 +35,7 @@ use win_hotkeys::VKey;
 
 mod komorebi;
 mod mouse;
+mod observe;
 mod touchpad;
 
 lazy_static! {
@@ -352,6 +353,9 @@ enum SubCommand {
         #[clap(long)]
         check: bool,
     },
+    /// Write the name of each key that is pressed, as it is written in a whkdrc, to find out what
+    /// to call one
+    Observe,
     /// Show what the touchpad's fingers do, as a command bound to swipe3 or swipe4 would be told
     Touchpad {
         /// Replay a recording of frames (made with --frames) instead of listening to a touchpad
@@ -606,6 +610,10 @@ fn main() -> Result<()> {
 
     if let Some(SubCommand::Fmt { path, write, check }) = cli.command {
         return fmt(path.or(cli.config), write, check);
+    }
+
+    if let Some(SubCommand::Observe) = cli.command {
+        return observe::run();
     }
 
     if let Some(SubCommand::Touchpad {

@@ -396,6 +396,25 @@ and `cargo xtask editors --check` (which also runs as a test) fails if they are 
 ## Valid Hotkeys
 The list of valid hotkeys can be found [here](https://docs.rs/win-hotkeys/latest/win_hotkeys/enum.VKey.html).
 
+### Finding the name of a key
+
+`whkd observe` writes each key you press as it would be written in a whkdrc, with the modifiers that are held, until
+you stop it with Ctrl+C. It is the way to find out what a key such as `;` or `[` is called on your keyboard, where it
+is often `oem_1` or `oem_4`:
+
+```
+> whkd observe
+Press keys, and what to write in a whkdrc for each is written here. Press Ctrl+C to stop.
+oem_1
+alt + oem_4
+alt + shift + return
+```
+
+- It only watches. Every key still goes to the program it was for, and whkd can be running at the same time
+- A key that is held is written once, and a modifier on its own is written as it is pressed
+- Either side of the keyboard is the same modifier (`alt`), and input that other programs synthesise is not shown
+- A key that has no name in a whkdrc is written as `(a key without a name, virtual-key code 0x..)`
+
 ## License
 
 `whkd` is licensed under the [Komorebi 2.0.0 license](./LICENSE.md), which
