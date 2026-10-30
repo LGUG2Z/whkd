@@ -36,6 +36,7 @@ use win_hotkeys::VKey;
 mod komorebi;
 mod mouse;
 mod observe;
+mod reload;
 mod touchpad;
 
 lazy_static! {
@@ -331,6 +332,13 @@ struct Cli {
     /// Path to whkdrc
     #[clap(action, short, long)]
     config: Option<PathBuf>,
+    /// Do not start again to use the new configuration when the whkdrc changes
+    #[clap(long)]
+    no_hotload: bool,
+    /// Set when whkd starts itself to use a new configuration: the process it replaces, which it
+    /// waits for to exit
+    #[clap(long = "reloaded-from", hide = true, value_name = "PID")]
+    reloaded_from: Option<u32>,
     #[clap(subcommand)]
     command: Option<SubCommand>,
 }
@@ -626,6 +634,13 @@ fn main() -> Result<()> {
         return touchpad_diagnostic(replay, demo, instant, frames);
     }
 
+    // the keys are only free to listen to once the whkd that this one replaces has let go of them
+    if let Some(pid) = cli.reloaded_from {
+        reload::wait_for_exit(pid);
+    }
+
+    let watched = cli.config.clone().map_or_else(default_config_path, Ok);
+
     let whkdrc = cli.config.map_or_else(
         || WHKDRC.clone(),
         |config| {
@@ -785,6 +800,13 @@ fn main() -> Result<()> {
                 }
             },
         )?;
+    }
+
+    if !cli.no_hotload {
+        match watched {
+            Ok(path) => reload::watch(&path, key_validator),
+            Err(error) => eprintln!("Unable to watch the whkdrc for changes: {error}"),
+        }
     }
 
     hkm.event_loop();

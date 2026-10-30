@@ -95,6 +95,18 @@ running. It also reports things that parse but are probably a mistake:
 - a binding with an empty command
 - (as advice) a hotkey that only has conditional bindings and no default, which swallows the key when none match
 
+## Reloading the configuration
+
+whkd looks at its whkdrc while it runs, and when the file changes it checks it as `whkd validate` does:
+
+- If it is fine, whkd starts again with it. The new whkd waits for the old one to exit before it listens to any key, so
+  nothing is handled twice, and warnings are written as `whkd validate` writes them
+- If it is not, the mistake is reported where it is, and whkd keeps running the configuration it had, until the file is
+  changed again. A file that an editor is still writing is not read until it has been left alone for a moment
+
+A reload starts the daemon again, so it is not paused afterwards even if it was, and a whkd that was started in a
+terminal carries on in the same terminal while the prompt comes back. `whkd --no-hotload` turns it off.
+
 ## Ignoring applications
 
 To have nothing run while some applications have focus, list them in a directive, after the other directives, instead
