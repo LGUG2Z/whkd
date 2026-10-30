@@ -36,6 +36,7 @@ use win_hotkeys::VKey;
 mod komorebi;
 mod mouse;
 mod observe;
+mod passthrough;
 mod reload;
 mod touchpad;
 
@@ -800,6 +801,12 @@ fn main() -> Result<()> {
                 }
             },
         )?;
+    }
+
+    // the applications that are ignored are left alone by pausing while they have focus, which is
+    // what stops the key from being swallowed
+    if !whkdrc.ignore.is_empty() {
+        passthrough::start(whkdrc.ignore.clone(), hkm.pause_handle());
     }
 
     if !cli.no_hotload {

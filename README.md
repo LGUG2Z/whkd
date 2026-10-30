@@ -120,9 +120,13 @@ of giving every binding an `Ignore` entry for them:
 
 - The names are process names, like those of `app =`, and `|` separates them. They have to be the whole name, with the
   same case
-- It covers keyboard bindings, mouse bindings and gestures. It is the same as `Ignore` for every binding: whkd runs
-  nothing, but it still consumes the key, as it does for any key that has a binding. For a key to reach an application,
-  pause whkd with the `.pause` hotkey
+- It covers keyboard bindings, mouse bindings and gestures, and they go through to the application: while one that is
+  listed has focus, whkd is paused, so no key or mouse input is swallowed. whkd only resumes what it paused itself, so a
+  pause that you took with the `.pause` hotkey is left as it is
+- A key is only let through once whkd has seen that the application has focus, so the first key pressed in the instant
+  after switching to it can still be swallowed
+- `Ignore` as the command of an entry, which is for one key, still swallows it: whether a key is swallowed is decided
+  before it is known which entry applies
 - A binding for an application that is ignored never runs, and `whkd validate` warns about it
 
 ## Long commands
