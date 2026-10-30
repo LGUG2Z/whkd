@@ -47,6 +47,15 @@ pub fn generated_files() -> Vec<(PathBuf, String)> {
             PathBuf::from("editors/tree-sitter-whkdrc/queries/folds.scm"),
             treesitter::folds(),
         ),
+        // Zed reads the same queries, from a directory of its own
+        (
+            PathBuf::from("editors/zed/languages/whkdrc/highlights.scm"),
+            treesitter::highlights(&vocabulary),
+        ),
+        (
+            PathBuf::from("editors/zed/languages/whkdrc/injections.scm"),
+            treesitter::injections(),
+        ),
     ]
 }
 

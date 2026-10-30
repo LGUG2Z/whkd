@@ -1,0 +1,5 @@
+name = "whkdrc"
+grammar = "whkdrc"
+path_suffixes = ["whkdrc"]
+line_comments = ["# "]
+brackets = [{ start = "[", end = "]", close = true, newline = true }]
