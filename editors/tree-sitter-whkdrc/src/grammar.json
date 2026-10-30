@@ -127,6 +127,22 @@
           ]
         },
         {
+          "type": "REPEAT",
+          "content": {
+            "type": "SEQ",
+            "members": [
+              {
+                "type": "SYMBOL",
+                "name": "_eol"
+              },
+              {
+                "type": "SYMBOL",
+                "name": "check_directive"
+              }
+            ]
+          }
+        },
+        {
           "type": "REPEAT1",
           "content": {
             "type": "SEQ",
@@ -292,6 +308,31 @@
           ]
         }
       ]
+    },
+    "check_directive": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": ".when"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "check_name"
+        },
+        {
+          "type": "STRING",
+          "value": ":"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "command"
+        }
+      ]
+    },
+    "check_name": {
+      "type": "PATTERN",
+      "value": "[\\p{L}_][\\p{L}\\p{N}_]*"
     },
     "number": {
       "type": "PATTERN",
@@ -468,7 +509,81 @@
         },
         {
           "type": "SYMBOL",
+          "name": "negated_check"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "check_predicate"
+        },
+        {
+          "type": "SYMBOL",
           "name": "process_name"
+        }
+      ]
+    },
+    "negated_check": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "!"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "check_name"
+        }
+      ]
+    },
+    "check_predicate": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "ALIAS",
+          "content": {
+            "type": "SYMBOL",
+            "name": "_process_name"
+          },
+          "named": true,
+          "value": "check_name"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "comparison"
+        },
+        {
+          "type": "SEQ",
+          "members": [
+            {
+              "type": "ALIAS",
+              "content": {
+                "type": "SYMBOL",
+                "name": "app_name"
+              },
+              "named": true,
+              "value": "check_value"
+            },
+            {
+              "type": "REPEAT",
+              "content": {
+                "type": "SEQ",
+                "members": [
+                  {
+                    "type": "STRING",
+                    "value": "|"
+                  },
+                  {
+                    "type": "ALIAS",
+                    "content": {
+                      "type": "SYMBOL",
+                      "name": "app_name"
+                    },
+                    "named": true,
+                    "value": "check_value"
+                  }
+                ]
+              }
+            }
+          ]
         }
       ]
     },

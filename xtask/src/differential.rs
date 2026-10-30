@@ -60,6 +60,11 @@ const SNIPPETS: &[&str] = &[
     ".pause alt + p\n",
     ".pause_hook x\n",
     ".ignore Code\n",
+    ".when x : y\n",
+    ".when ",
+    "!",
+    "!x",
+    " x &",
     ".ignore ",
     " \\",
     " \\\n",
@@ -223,6 +228,56 @@ fn known_difference(
     // a key named `when` can be written right after a group, where the grammar has a guard
     if parser_accepts && !tree_sitter_accepts && source.contains("}when") {
         return Some("a key named when next to a group");
+    }
+
+    // what a condition may be called, and that it is defined once, is for the parser to say. To the
+    // grammar a name is a name
+    if !parser_accepts && tree_sitter_accepts && source.contains(".when") {
+        return Some("the name of a condition");
+    }
+
+    // and so is which names can be compared with a value: to the grammar, any can
+    if !parser_accepts && tree_sitter_accepts {
+        let compared = source.match_indices('=').any(|(at, _)| {
+            let before = source[..at].trim_end_matches('!').trim_end();
+
+            // the condition that is being compared: what is after the last `when`, `&`, `|`, `:` or
+            // `[` or line break, which to the grammar can be any run of words
+            let start = before
+                .rfind(['&', '|', ':', '[', '\n'])
+                .map_or(0, |i| i + 1);
+            let term = before[start..].trim();
+            let term = term.split_once(" when ").map_or(term, |(_, after)| after);
+            let words: Vec<&str> = term.split_whitespace().collect();
+
+            !words.is_empty() && !(words.len() == 1 && (words[0] == "app" || words[0] == "layout"))
+        });
+
+        if compared {
+            return Some("a name compared with a value");
+        }
+    }
+
+    // `Default` is something to the parser, and cannot be one of several conditions. To the grammar
+    // it is a name like any other when it is not on its own
+    if !parser_accepts && tree_sitter_accepts {
+        let squashed: String = source.chars().filter(|c| !c.is_whitespace()).collect();
+
+        if squashed.contains("&Default") || squashed.contains("Default&") {
+            return Some("`Default` with other conditions");
+        }
+    }
+
+    // which names a `!` can be put against is for the parser to say, since it is the conditions that
+    // have been defined. To the grammar they are names
+    if !parser_accepts && tree_sitter_accepts {
+        let negation = source
+            .match_indices('!')
+            .any(|(at, _)| !source[at + 1..].starts_with('='));
+
+        if negation {
+            return Some("the opposite of a condition that is not defined");
+        }
     }
 
     // what a group stands for is for the parser to say: whether the keys that come out of it are

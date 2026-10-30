@@ -4,11 +4,13 @@ use ariadne::Label;
 use ariadne::Report;
 use ariadne::ReportKind;
 use ariadne::Source;
+use std::collections::HashSet;
 use std::io::IsTerminal;
 use std::ops::Range;
 use std::path::Path;
 use std::path::PathBuf;
 use thiserror::Error;
+use whkd_core::Check as CheckDefinition;
 use whkd_core::Condition;
 use whkd_core::GestureInput;
 use whkd_core::HotkeyBinding;
@@ -31,14 +33,17 @@ use syntax::BLOCK_CLOSE;
 use syntax::BLOCK_OPEN;
 use syntax::COMMENT;
 use syntax::DEFAULT;
+use syntax::DEFINE_CHECK;
 use syntax::DELIMITER;
 use syntax::DIRECTIVES;
 use syntax::EQUALS;
 use syntax::GESTURE_COOLDOWN;
 use syntax::GROUP_OPEN;
+use syntax::IGNORE;
 use syntax::IGNORE_APPS;
 use syntax::KEY_SEPARATOR;
 use syntax::LAYOUT;
+use syntax::NOT;
 use syntax::NOT_EQUALS;
 use syntax::OR;
 use syntax::PAUSE;
@@ -256,6 +261,8 @@ pub fn parse_full(src: &str, keys: Option<&KeyValidator>) -> Result<Parsed, Pars
         keys,
         entries: vec![],
         warnings: vec![],
+        defined: vec![],
+        used: HashSet::new(),
     }
     .parse_file()
 }
@@ -369,6 +376,10 @@ struct Cursor<'a> {
     /// Every binding seen, in file order, for the checks that run once parsing is done
     entries: Vec<Entry>,
     warnings: Vec<ParseError>,
+    /// The conditions that `.when` defines, and where
+    defined: Vec<(String, Range<usize>)>,
+    /// Which of them have been used
+    used: HashSet<String>,
 }
 
 impl<'a> Cursor<'a> {
@@ -512,6 +523,12 @@ impl<'a> Cursor<'a> {
             vec![]
         };
 
+        let mut checks = vec![];
+        while self.at_keyword(DEFINE_CHECK) {
+            checks.push(self.parse_check_definition()?);
+            self.skip_trivia();
+        }
+
         let mut app_bindings = vec![];
         let mut bindings = vec![];
 
@@ -595,6 +612,20 @@ impl<'a> Cursor<'a> {
         let mut warnings = std::mem::take(&mut self.warnings);
         warnings.extend(lint(&self.entries));
         warnings.extend(lint_ignored(&self.entries, &ignore));
+
+        for (name, span) in &self.defined {
+            if !self.used.contains(name) {
+                warnings.push(
+                    ParseError::new(
+                        format!("`{name}` is defined but never used"),
+                        span.clone(),
+                        "no `when` guard or block entry uses it",
+                    )
+                    .with_severity(Severity::Warning)
+                    .with_help(format!("use it as `when {name}`, or remove it")),
+                );
+            }
+        }
         warnings.sort_by_key(|warning| warning.span.start);
 
         Ok(Parsed {
@@ -607,8 +638,82 @@ impl<'a> Cursor<'a> {
                 wheel_cooldown,
                 gesture_cooldown,
                 ignore,
+                checks,
             },
             warnings,
+        })
+    }
+
+    /// `.when name : command`: a condition that holds when the command, run in `cmd`, exits with 0
+    fn parse_check_definition(&mut self) -> Result<CheckDefinition, ParseError> {
+        self.pos += DEFINE_CHECK.len();
+        self.skip_inline();
+
+        let start = self.pos;
+        let name = self.take_while(is_ident_continue);
+        let span = if name.is_empty() {
+            self.here()
+        } else {
+            start..self.pos
+        };
+
+        if !name.starts_with(is_ident_start) {
+            return Err(ParseError::new(
+                if name.is_empty() {
+                    format!(
+                        "expected a name after `{DEFINE_CHECK}`, found {}",
+                        self.found()
+                    )
+                } else {
+                    format!("`{name}` cannot be the name of a condition")
+                },
+                span,
+                "expected a name made of letters, digits and `_`, that starts with a letter",
+            )
+            .with_help(format!("write `{DEFINE_CHECK} docked : command`")));
+        }
+
+        // names that already mean something in a condition
+        if [DEFAULT, IGNORE, APP, LAYOUT, WHEN].contains(&name) {
+            return Err(ParseError::new(
+                format!("`{name}` cannot be the name of a condition"),
+                span,
+                "it already means something in a condition",
+            )
+            .with_help("choose another name"));
+        }
+
+        if let Some((_, first)) = self.defined.iter().find(|(defined, _)| defined == name) {
+            return Err(ParseError::new(
+                format!("`{name}` is already defined"),
+                span,
+                "defined again here",
+            )
+            .with_note(first.clone(), "defined here"));
+        }
+
+        self.skip_inline();
+        self.expect(DELIMITER)
+            .map_err(|error| error.with_help(format!("write `{DEFINE_CHECK} {name} : command`")))?;
+
+        self.skip_inline();
+        if matches!(self.peek(), None | Some('\n' | '\r' | COMMENT)) {
+            return Err(ParseError::new(
+                format!("`{name}` has no command"),
+                self.here(),
+                "expected the command that decides it",
+            )
+            .with_help(
+                "the condition holds when the command, which is run in `cmd`, exits with 0",
+            ));
+        }
+
+        let command = self.parse_command();
+        self.defined.push((name.to_string(), span));
+
+        Ok(CheckDefinition {
+            name: name.to_string(),
+            command,
         })
     }
 
@@ -811,6 +916,8 @@ impl<'a> Cursor<'a> {
             keys: self.keys,
             entries: vec![],
             warnings: vec![],
+            defined: vec![],
+            used: HashSet::new(),
         };
 
         let result = cursor.parse_hotkeys(allow_mouse).and_then(|keys| {
@@ -1124,6 +1231,10 @@ impl<'a> Cursor<'a> {
 
     /// A bare process name, `Default`, or `app = ...` / `layout = ...` (also `!=`)
     fn parse_term(&mut self) -> Result<Term, ParseError> {
+        if self.peek() == Some(NOT) && !self.rest().starts_with(NOT_EQUALS) {
+            return self.parse_negated_check();
+        }
+
         if !self.peek().is_some_and(is_ident_start) {
             return Err(ParseError::new(
                 format!("expected a condition, found {}", self.found()),
@@ -1156,6 +1267,14 @@ impl<'a> Cursor<'a> {
         } else {
             return Ok(if name == DEFAULT {
                 Term::Default
+            } else if self.defined.iter().any(|(defined, _)| *defined == name) {
+                // what was defined is what the name means, rather than a process called that, which
+                // `app = ...` is for
+                self.used.insert(name.clone());
+                Term::Predicate(Predicate::Check {
+                    name,
+                    negated: false,
+                })
             } else {
                 Term::Predicate(Predicate::App {
                     names: vec![name],
@@ -1181,19 +1300,86 @@ impl<'a> Cursor<'a> {
 
                 Ok(Term::Predicate(Predicate::Layout { layouts, negated }))
             }
+            // what a condition that was defined writes, which is for the whkdrc to say
+            _ if self.defined.iter().any(|(defined, _)| *defined == name) => {
+                self.used.insert(name.clone());
+
+                Ok(Term::Predicate(Predicate::CheckIs {
+                    name,
+                    values: values.into_iter().map(|(value, _)| value).collect(),
+                    negated,
+                }))
+            }
             _ => {
+                let defined: Vec<&str> = self
+                    .defined
+                    .iter()
+                    .map(|(defined, _)| defined.as_str())
+                    .collect();
+
                 let error = ParseError::new(
                     format!("unknown condition `{name}`"),
                     start..end,
-                    "expected `app` or `layout`",
+                    if defined.is_empty() {
+                        String::from("expected `app` or `layout`")
+                    } else {
+                        format!("expected `app`, `layout` or one of: {}", defined.join(", "))
+                    },
                 );
 
-                Err(match closest(&name.to_lowercase(), PREDICATES) {
+                let candidates = PREDICATES.into_iter().chain(defined);
+                Err(match closest(&name.to_lowercase(), candidates) {
                     Some(suggestion) => error.with_help(format!("did you mean `{suggestion}`?")),
                     None => error,
                 })
             }
         }
+    }
+
+    /// `!name`, where `name` is a condition that `.when` defines
+    fn parse_negated_check(&mut self) -> Result<Term, ParseError> {
+        let start = self.pos;
+        self.pos += NOT.len_utf8();
+        self.skip_inline();
+
+        let name_start = self.pos;
+        let name = self.take_while(is_ident_continue);
+        let span = if name.is_empty() {
+            self.here()
+        } else {
+            name_start..self.pos
+        };
+
+        if name.is_empty() {
+            return Err(ParseError::new(
+                format!("expected the name of a condition after `{NOT}`, found {}", self.found()),
+                span,
+                "expected a name here",
+            )
+            .with_help(format!("`{NOT}docked` is the opposite of a condition that `{DEFINE_CHECK} docked : command` defines")));
+        }
+
+        if !self.defined.iter().any(|(defined, _)| defined == name) {
+            let error = ParseError::new(
+                format!("`{name}` is not a condition that is defined"),
+                start..self.pos,
+                format!("`{NOT}` is for the conditions that `{DEFINE_CHECK}` defines"),
+            );
+
+            let defined = self.defined.iter().map(|(defined, _)| defined.as_str());
+            return Err(match closest(&name.to_lowercase(), defined) {
+                Some(suggestion) => error.with_help(format!("did you mean `{NOT}{suggestion}`?")),
+                None => error.with_help(format!(
+                    "define it before the bindings with `{DEFINE_CHECK} {name} : command`"
+                )),
+            });
+        }
+
+        self.used.insert(name.to_string());
+        Ok(Term::Predicate(Predicate::Check {
+            name: name.to_string(),
+            negated: true,
+        }))
     }
 
     /// One or more values separated by `|`, each a run of words, with the span of each
@@ -1575,6 +1761,30 @@ fn implies(given: &Predicate, needed: &Predicate) -> bool {
                 negated: needed_negated,
             },
         ) => set_implies(given, *given_negated, needed, *needed_negated),
+        (
+            Predicate::Check {
+                name: given,
+                negated: given_negated,
+            },
+            Predicate::Check {
+                name: needed,
+                negated: needed_negated,
+            },
+        ) => given == needed && given_negated == needed_negated,
+        (
+            Predicate::CheckIs {
+                name: given_name,
+                values: given,
+                negated: given_negated,
+            },
+            Predicate::CheckIs {
+                name: needed_name,
+                values: needed,
+                negated: needed_negated,
+            },
+        ) => {
+            given_name == needed_name && set_implies(given, *given_negated, needed, *needed_negated)
+        }
         _ => false,
     }
 }
@@ -1638,6 +1848,7 @@ alt + h : echo "Hello""#;
             wheel_cooldown: None,
             gesture_cooldown: None,
             ignore: vec![],
+            checks: vec![],
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -1665,6 +1876,7 @@ alt + h : echo "Hello""#;
             wheel_cooldown: None,
             gesture_cooldown: None,
             ignore: vec![],
+            checks: vec![],
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -1749,6 +1961,7 @@ alt + 1 : komorebic focus-workspace 0 # digits are fine in the hotkeys section
             wheel_cooldown: None,
             gesture_cooldown: None,
             ignore: vec![],
+            checks: vec![],
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -1776,6 +1989,7 @@ f11 : echo "hello f11""#;
             wheel_cooldown: None,
             gesture_cooldown: None,
             ignore: vec![],
+            checks: vec![],
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -1833,6 +2047,7 @@ alt + h : echo "Hello""#;
             wheel_cooldown: None,
             gesture_cooldown: None,
             ignore: vec![],
+            checks: vec![],
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -1864,6 +2079,7 @@ alt + h : echo "Hello""#;
             wheel_cooldown: None,
             gesture_cooldown: None,
             ignore: vec![],
+            checks: vec![],
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -1896,6 +2112,7 @@ alt + h : echo "Hello""#;
             wheel_cooldown: None,
             gesture_cooldown: None,
             ignore: vec![],
+            checks: vec![],
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -1928,6 +2145,7 @@ alt + h : echo "Hello""#;
             wheel_cooldown: None,
             gesture_cooldown: None,
             ignore: vec![],
+            checks: vec![],
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -3220,5 +3438,399 @@ alt + h + wheelup : x
         // and without the directive there is nothing to be ignored
         let src = ".shell cmd\nf1 [\n  Firefox : a\n]\n";
         assert!(never_runs(src).is_empty());
+    }
+
+    fn check_predicate(name: &str, negated: bool) -> Predicate {
+        Predicate::Check {
+            name: name.to_string(),
+            negated,
+        }
+    }
+
+    #[test]
+    fn test_conditions_are_defined_with_when() {
+        let parsed = parse(
+            ".shell cmd\n.when docked : ping -n 1 -w 100 10.0.0.1 >nul # the dock\n.when wide : powershell -c \"exit 1\"\nf1 when docked & wide : x\n",
+        )
+        .unwrap();
+
+        assert_eq!(
+            parsed.checks,
+            [
+                whkd_core::Check {
+                    name: String::from("docked"),
+                    command: String::from("ping -n 1 -w 100 10.0.0.1 >nul"),
+                },
+                whkd_core::Check {
+                    name: String::from("wide"),
+                    command: String::from("powershell -c \"exit 1\""),
+                },
+            ]
+        );
+        assert!(parse(".shell cmd\nf1 : x\n").unwrap().checks.is_empty());
+    }
+
+    #[test]
+    fn test_a_definition_can_be_continued_and_comes_after_the_other_directives() {
+        let parsed = parse(
+            ".shell cmd\n.pause alt + p\n.wheel_cooldown 20\n.ignore Code\n.when docked : echo one \\\n    two\nf1 when docked : x\n",
+        )
+        .unwrap();
+        assert_eq!(parsed.checks[0].command, "echo one two");
+        assert_eq!(parsed.ignore, ["Code"]);
+
+        // not before them
+        for src in [
+            ".shell cmd\n.when docked : x\n.ignore Code\nf1 when docked : x\n",
+            ".shell cmd\n.when docked : x\n.pause alt + p\nf1 when docked : x\n",
+            ".shell cmd\nf1 when x : x\n.when docked : x\n",
+        ] {
+            let error = err(src);
+            assert!(
+                error.message.starts_with("expected"),
+                "{src:?}: {}",
+                error.message
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_condition_is_used_by_its_name_in_guards_and_blocks() {
+        let parsed = parse(
+            ".shell cmd\n.when docked : x\nf1 when docked : a\nf2 when !docked & layout = bsp : b\nf3 [\n  docked : c\n  !docked : d\n  Default : e\n]\n",
+        )
+        .unwrap();
+
+        let conditions: Vec<Condition> = parsed
+            .app_bindings
+            .iter()
+            .flat_map(|(_, bindings)| bindings.iter().map(|binding| binding.condition.clone()))
+            .collect();
+
+        assert_eq!(
+            conditions,
+            vec![
+                Condition::Predicates(vec![check_predicate("docked", false)]),
+                Condition::Predicates(vec![
+                    check_predicate("docked", true),
+                    Predicate::Layout {
+                        layouts: vec![Layout::Bsp],
+                        negated: false
+                    },
+                ]),
+                Condition::Predicates(vec![check_predicate("docked", false)]),
+                Condition::Predicates(vec![check_predicate("docked", true)]),
+                Condition::Default,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_a_name_that_is_not_defined_is_a_process_as_it_always_was() {
+        let parsed = parse(".shell cmd\nf1 when docked : a\nf2 [\n  docked : b\n]\n").unwrap();
+
+        let app = Condition::app("docked");
+        assert!(parsed
+            .app_bindings
+            .iter()
+            .all(|(_, bindings)| bindings[0].condition == app));
+    }
+
+    #[test]
+    fn test_a_definition_is_what_its_name_means_and_app_is_for_the_process() {
+        let parsed = parse(
+            ".shell cmd\n.when Firefox : x\nf1 when Firefox : a\nf2 when app = Firefox : b\n",
+        )
+        .unwrap();
+
+        assert_eq!(
+            parsed.app_bindings[0].1[0].condition,
+            Condition::Predicates(vec![check_predicate("Firefox", false)])
+        );
+        assert_eq!(
+            parsed.app_bindings[1].1[0].condition,
+            Condition::app("Firefox")
+        );
+    }
+
+    #[test]
+    fn test_names_are_case_sensitive_and_only_whole_names_count() {
+        let parsed =
+            parse(".shell cmd\n.when docked : x\nf1 when Docked : a\nf2 when docked2 : b\nf3 when docked : c\n")
+                .unwrap();
+
+        assert_eq!(
+            parsed.app_bindings[0].1[0].condition,
+            Condition::app("Docked")
+        );
+        assert_eq!(
+            parsed.app_bindings[1].1[0].condition,
+            Condition::app("docked2")
+        );
+        assert_eq!(
+            parsed.app_bindings[2].1[0].condition,
+            Condition::Predicates(vec![check_predicate("docked", false)])
+        );
+    }
+
+    #[test]
+    fn test_not_equals_is_not_a_negation() {
+        let parsed =
+            parse(".shell cmd\n.when docked : x\nf1 when app != Code & docked : a\n").unwrap();
+
+        assert_eq!(
+            parsed.app_bindings[0].1[0].condition,
+            Condition::Predicates(vec![
+                Predicate::App {
+                    names: vec![String::from("Code")],
+                    negated: true
+                },
+                check_predicate("docked", false),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_a_definition_needs_a_name_a_colon_and_a_command() {
+        for (src, message) in [
+            (
+                ".shell cmd\n.when\nf1 : x\n",
+                "expected a name after `.when`, found end of line",
+            ),
+            (
+                ".shell cmd\n.when : x\nf1 : x\n",
+                "expected a name after `.when`, found `:`",
+            ),
+            (
+                ".shell cmd\n.when 1x : x\nf1 : x\n",
+                "`1x` cannot be the name of a condition",
+            ),
+            (
+                ".shell cmd\n.when docked x\nf1 : x\n",
+                "expected `:`, found `x`",
+            ),
+            (
+                ".shell cmd\n.when docked\nf1 : x\n",
+                "expected `:`, found end of line",
+            ),
+            (
+                ".shell cmd\n.when docked :\nf1 : x\n",
+                "`docked` has no command",
+            ),
+            (
+                ".shell cmd\n.when docked : # nothing\nf1 : x\n",
+                "`docked` has no command",
+            ),
+        ] {
+            let error = err(src);
+            assert_eq!(error.message, message, "{src:?}");
+            assert!(error.help.is_some(), "{src:?}");
+        }
+    }
+
+    #[test]
+    fn test_names_that_mean_something_are_refused() {
+        for name in ["Default", "Ignore", "app", "layout", "when"] {
+            let error = err(&format!(".shell cmd\n.when {name} : x\nf1 : x\n"));
+            assert_eq!(
+                error.message,
+                format!("`{name}` cannot be the name of a condition")
+            );
+            assert_eq!(error.label, "it already means something in a condition");
+        }
+    }
+
+    #[test]
+    fn test_a_condition_is_defined_once() {
+        let src = ".shell cmd\n.when docked : x\n.when docked : y\nf1 when docked : z\n";
+        let error = err(src);
+        assert_eq!(error.message, "`docked` is already defined");
+        assert_eq!(&src[error.span.clone()], "docked");
+        assert_eq!(error.span.start, src.rfind("docked : y").unwrap());
+        assert_eq!(&src[error.notes[0].0.clone()], "docked");
+        assert_eq!(error.notes[0].0.start, src.find("docked").unwrap());
+    }
+
+    #[test]
+    fn test_the_opposite_of_what_is_not_defined_is_a_mistake_with_a_suggestion() {
+        let src = ".shell cmd\n.when docked : x\nf1 when !dokced : a\n";
+        let error = err(src);
+        assert_eq!(error.message, "`dokced` is not a condition that is defined");
+        assert_eq!(&src[error.span.clone()], "!dokced");
+        assert_eq!(error.help.as_deref(), Some("did you mean `!docked`?"));
+
+        let error = err(".shell cmd\nf1 when !nothing : a\n");
+        assert_eq!(
+            error.help.as_deref(),
+            Some("define it before the bindings with `.when nothing : command`")
+        );
+    }
+
+    #[test]
+    fn test_a_bang_needs_a_name() {
+        let error = err(".shell cmd\n.when docked : x\nf1 when ! : a\n");
+        assert!(
+            error
+                .message
+                .starts_with("expected the name of a condition after `!`"),
+            "{}",
+            error.message
+        );
+    }
+
+    #[test]
+    fn test_a_condition_that_is_not_used_is_flagged() {
+        let src = ".shell cmd\n.when docked : x\n.when wide : y\nf1 when docked : a\n";
+        let found: Vec<ParseError> = warnings(src)
+            .into_iter()
+            .filter(|warning| warning.message.contains("never used"))
+            .collect();
+
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].message, "`wide` is defined but never used");
+        assert_eq!(&src[found[0].span.clone()], "wide");
+        assert_eq!(
+            found[0].help.as_deref(),
+            Some("use it as `when wide`, or remove it")
+        );
+        assert_eq!(found[0].severity, Severity::Warning);
+    }
+
+    #[test]
+    fn test_the_opposite_counts_as_using_a_condition() {
+        let src = ".shell cmd\n.when docked : x\nf1 when !docked : a\nf1 when docked : b\n";
+        assert!(warnings(src)
+            .iter()
+            .all(|warning| !warning.message.contains("never used")));
+
+        let src = ".shell cmd\n.when docked : x\nf1 when !docked : a\n";
+        assert!(warnings(src)
+            .iter()
+            .all(|warning| !warning.message.contains("never used")));
+    }
+
+    #[test]
+    fn test_entries_that_can_never_be_reached_are_found_for_conditions_too() {
+        // the same condition, which is the same answer
+        let src = ".shell cmd\n.when docked : x\nf1 [\n  docked : a\n  docked & layout = bsp : b\n  Default : c\n]\n";
+        let found = messages(src);
+        assert!(
+            found
+                .iter()
+                .any(|message| message.contains("can never be reached")),
+            "{found:?}"
+        );
+
+        // and the opposite is not
+        let src =
+            ".shell cmd\n.when docked : x\nf1 [\n  docked : a\n  !docked : b\n  Default : c\n]\n";
+        assert!(!messages(src)
+            .iter()
+            .any(|message| message.contains("can never be reached")));
+    }
+
+    #[test]
+    fn test_conditions_work_with_groups_of_braces() {
+        let parsed =
+            parse(".shell cmd\n.when docked : x\nalt + {h,j} when docked : echo {a,b}\n").unwrap();
+        assert_eq!(parsed.app_bindings.len(), 2);
+        assert_eq!(
+            parsed.app_bindings[1].1[0].condition,
+            Condition::Predicates(vec![check_predicate("docked", false)])
+        );
+    }
+
+    fn check_is(name: &str, values: &[&str], negated: bool) -> Predicate {
+        Predicate::CheckIs {
+            name: name.to_string(),
+            values: values.iter().map(ToString::to_string).collect(),
+            negated,
+        }
+    }
+
+    #[test]
+    fn test_a_condition_can_be_compared_with_what_it_writes() {
+        let parsed = parse(
+            ".shell cmd\n.when mode : mode.exe\nf1 when mode = work : a\nf2 when mode != work | home & layout = bsp : b\nf3 [\n  mode = Google Chrome : c\n  mode != x : d\n  mode : e\n  Default : f\n]\n",
+        )
+        .unwrap();
+
+        let conditions: Vec<Condition> = parsed
+            .app_bindings
+            .iter()
+            .flat_map(|(_, bindings)| bindings.iter().map(|binding| binding.condition.clone()))
+            .collect();
+
+        assert_eq!(
+            conditions,
+            vec![
+                Condition::Predicates(vec![check_is("mode", &["work"], false)]),
+                Condition::Predicates(vec![
+                    check_is("mode", &["work", "home"], true),
+                    Predicate::Layout {
+                        layouts: vec![Layout::Bsp],
+                        negated: false
+                    },
+                ]),
+                Condition::Predicates(vec![check_is("mode", &["Google Chrome"], false)]),
+                Condition::Predicates(vec![check_is("mode", &["x"], true)]),
+                Condition::Predicates(vec![check_predicate("mode", false)]),
+                Condition::Default,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_a_comparison_counts_as_using_a_condition() {
+        let src = ".shell cmd\n.when mode : x\nf1 when mode = work : a\n";
+        assert!(warnings(src)
+            .iter()
+            .all(|warning| !warning.message.contains("never used")));
+    }
+
+    #[test]
+    fn test_comparing_what_is_not_defined_is_an_unknown_condition_that_names_what_is() {
+        let src = ".shell cmd\n.when mode : x\n.when docked : y\nf1 when mod = work : a\nf2 when docked : b\n";
+        let error = err(src);
+        assert_eq!(error.message, "unknown condition `mod`");
+        assert_eq!(&src[error.span.clone()], "mod");
+        assert_eq!(
+            error.label,
+            "expected `app`, `layout` or one of: mode, docked"
+        );
+        assert_eq!(error.help.as_deref(), Some("did you mean `mode`?"));
+
+        // and with nothing defined it is as it was
+        let error = err(".shell cmd\nf1 when mode = work : a\n");
+        assert_eq!(error.label, "expected `app` or `layout`");
+    }
+
+    #[test]
+    fn test_a_comparison_needs_a_value() {
+        let error = err(".shell cmd\n.when mode : x\nf1 when mode = : a\n");
+        assert!(
+            error.message.starts_with("expected a value"),
+            "{}",
+            error.message
+        );
+    }
+
+    #[test]
+    fn test_entries_that_can_never_be_reached_are_found_for_comparisons_too() {
+        let src = ".shell cmd\n.when mode : x\nf1 [\n  mode = work | home : a\n  mode = work : b\n  Default : c\n]\n";
+        assert!(messages(src)
+            .iter()
+            .any(|message| message.contains("can never be reached")));
+
+        let src = ".shell cmd\n.when mode : x\nf1 [\n  mode = work : a\n  mode = home : b\n  Default : c\n]\n";
+        assert!(!messages(src)
+            .iter()
+            .any(|message| message.contains("can never be reached")));
+
+        // another condition is another answer
+        let src = ".shell cmd\n.when mode : x\n.when size : y\nf1 [\n  mode = work : a\n  size = work : b\n  Default : c\n]\n";
+        assert!(!messages(src)
+            .iter()
+            .any(|message| message.contains("can never be reached")));
     }
 }

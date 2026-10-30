@@ -61,6 +61,48 @@
     }
   },
   {
+    "type": "check_directive",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "check_name",
+          "named": true
+        },
+        {
+          "type": "command",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "check_predicate",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "check_name",
+          "named": true
+        },
+        {
+          "type": "check_value",
+          "named": true
+        },
+        {
+          "type": "comparison",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "comparison",
     "named": true,
     "fields": {}
@@ -78,7 +120,15 @@
           "named": true
         },
         {
+          "type": "check_predicate",
+          "named": true
+        },
+        {
           "type": "layout_predicate",
+          "named": true
+        },
+        {
+          "type": "negated_check",
           "named": true
         },
         {
@@ -195,6 +245,21 @@
     }
   },
   {
+    "type": "negated_check",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "check_name",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "pause_directive",
     "named": true,
     "fields": {},
@@ -267,6 +332,10 @@
           "named": true
         },
         {
+          "type": "check_directive",
+          "named": true
+        },
+        {
           "type": "gesture_cooldown_directive",
           "named": true
         },
@@ -324,6 +393,10 @@
     }
   },
   {
+    "type": "!",
+    "named": false
+  },
+  {
     "type": "!=",
     "named": false
   },
@@ -364,6 +437,10 @@
     "named": false
   },
   {
+    "type": ".when",
+    "named": false
+  },
+  {
     "type": ":",
     "named": false
   },
@@ -385,6 +462,14 @@
   },
   {
     "type": "app_name",
+    "named": true
+  },
+  {
+    "type": "check_name",
+    "named": true
+  },
+  {
+    "type": "check_value",
     "named": true
   },
   {

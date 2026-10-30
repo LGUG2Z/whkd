@@ -16,6 +16,16 @@ pub struct Whkdrc {
     pub gesture_cooldown: Option<u32>,
     /// The applications, by process name, that no binding runs a command in
     pub ignore: Vec<String>,
+    /// The conditions that the whkdrc defines, which are decided by running a command
+    pub checks: Vec<Check>,
+}
+
+/// A condition defined with `.when name : command`. On its own, it holds when its command, run in
+/// `cmd`, exits with 0. Compared with `=` or `!=`, it is what the command writes
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Check {
+    pub name: String,
+    pub command: String,
 }
 
 /// Whether the application with the focused window is one that the whkdrc says to leave alone
@@ -372,8 +382,25 @@ impl Display for GestureInput {
 /// A single test against the current state, e.g. `app = Firefox` or `layout != bsp`
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Predicate {
-    App { names: Vec<String>, negated: bool },
-    Layout { layouts: Vec<Layout>, negated: bool },
+    App {
+        names: Vec<String>,
+        negated: bool,
+    },
+    Layout {
+        layouts: Vec<Layout>,
+        negated: bool,
+    },
+    /// A condition defined with `.when`, or its opposite
+    Check {
+        name: String,
+        negated: bool,
+    },
+    /// What a condition defined with `.when` writes is one of `values`, or is not
+    CheckIs {
+        name: String,
+        values: Vec<String>,
+        negated: bool,
+    },
 }
 
 impl Predicate {
@@ -385,6 +412,17 @@ impl Predicate {
             Self::Layout { layouts, negated } => state
                 .layout
                 .is_some_and(|layout| layouts.contains(&layout) != *negated),
+            Self::Check { name, negated } => state.checks.holds(name) != *negated,
+            // when it could not be found out what the command writes, nothing can be said about it,
+            // negated or not
+            Self::CheckIs {
+                name,
+                values,
+                negated,
+            } => state
+                .checks
+                .says(name)
+                .is_some_and(|said| values.contains(&said) != *negated),
         }
     }
 }
@@ -427,13 +465,57 @@ impl Condition {
     }
 }
 
-/// What conditions are evaluated against
+/// Says whether the conditions defined with `.when` hold. Asked as late as it can be, and only about
+/// the conditions that the entries that are looked at use, since deciding takes running a command
+pub trait Checks {
+    /// Whether the command of the condition exited with 0
+    fn holds(&self, name: &str) -> bool;
+
+    /// What the command of the condition wrote, without the white space around it, if it exited with
+    /// 0, and `None` if it did not or could not be run
+    fn says(&self, name: &str) -> Option<String>;
+}
+
+/// For when there are no conditions of this kind, none of which hold
 #[derive(Debug, Copy, Clone)]
+pub struct NoChecks;
+
+impl Checks for NoChecks {
+    fn holds(&self, _name: &str) -> bool {
+        false
+    }
+
+    fn says(&self, _name: &str) -> Option<String> {
+        None
+    }
+}
+
+/// What conditions are evaluated against
+#[derive(Copy, Clone)]
 pub struct State<'a> {
     /// The name of the application with the focused window
     pub app: &'a str,
     /// The layout of komorebi's focused workspace, if komorebi could be asked
     pub layout: Option<Layout>,
+    /// Whether the conditions that the whkdrc defines hold
+    pub checks: &'a dyn Checks,
+}
+
+impl<'a> State<'a> {
+    /// A state in which there are no conditions of one's own
+    #[must_use]
+    pub fn new(app: &'a str, layout: Option<Layout>) -> Self {
+        Self {
+            app,
+            layout,
+            checks: &NoChecks,
+        }
+    }
+
+    #[must_use]
+    pub fn with_checks(self, checks: &'a dyn Checks) -> Self {
+        Self { checks, ..self }
+    }
 }
 
 /// Pick the entry to run: the first whose condition matches. If none does, fall back to the first
@@ -653,7 +735,7 @@ mod tests {
             (&bsp, "bsp"),
         ];
 
-        let state = |app, layout| State { app, layout };
+        let state = State::new;
         let pick = |s: State| select(entries.iter().map(|(c, v)| (*c, *v)), &s);
 
         assert_eq!(pick(state("Firefox", Some(Layout::Bsp))), Some("firefox"));
@@ -664,20 +746,14 @@ mod tests {
 
     #[test]
     fn unknown_layout_matches_nothing_even_when_negated() {
-        let state = State {
-            app: "x",
-            layout: None,
-        };
+        let state = State::new("x", None);
         assert!(!layout_is(&[Layout::Bsp], false).matches(&state));
         assert!(!layout_is(&[Layout::Bsp], true).matches(&state));
     }
 
     #[test]
     fn negation_and_conjunction() {
-        let state = State {
-            app: "Firefox",
-            layout: Some(Layout::Rows),
-        };
+        let state = State::new("Firefox", Some(Layout::Rows));
 
         assert!(layout_is(&[Layout::Bsp, Layout::Grid], true).matches(&state));
         assert!(!layout_is(&[Layout::Rows], true).matches(&state));
@@ -707,7 +783,7 @@ mod tests {
         ];
 
         let pick = |layout| {
-            let state = State { app: "x", layout };
+            let state = State::new("x", layout);
             select(entries.iter().map(|(c, v)| (*c, *v)), &state)
         };
 
@@ -715,10 +791,7 @@ mod tests {
         assert_eq!(pick(Some(Layout::Grid)), Some("default"));
 
         let without_default = [(&Condition::Always, "plain"), (&bsp, "bsp")];
-        let state = State {
-            app: "x",
-            layout: None,
-        };
+        let state = State::new("x", None);
         assert_eq!(
             select(without_default.iter().map(|(c, v)| (*c, *v)), &state),
             Some("plain")
@@ -736,5 +809,216 @@ mod tests {
         assert!(!is_ignored(&ignore, "Google"));
         assert!(!is_ignored(&ignore, ""));
         assert!(!is_ignored(&[], "Firefox"));
+    }
+
+    /// Which checks hold, what the others write, and how often each was asked about
+    struct Holding<'a> {
+        holding: &'a [&'a str],
+        writing: &'a [(&'a str, &'a str)],
+        asked: std::cell::RefCell<Vec<String>>,
+    }
+
+    impl Checks for Holding<'_> {
+        fn holds(&self, name: &str) -> bool {
+            self.asked.borrow_mut().push(name.to_string());
+            self.holding.contains(&name)
+        }
+
+        fn says(&self, name: &str) -> Option<String> {
+            self.asked.borrow_mut().push(name.to_string());
+            self.writing
+                .iter()
+                .find(|(written, _)| *written == name)
+                .map(|(_, said)| said.to_string())
+        }
+    }
+
+    fn holding<'a>(holding: &'a [&'a str]) -> Holding<'a> {
+        Holding {
+            holding,
+            writing: &[],
+            asked: std::cell::RefCell::new(vec![]),
+        }
+    }
+
+    fn writing<'a>(writing: &'a [(&'a str, &'a str)]) -> Holding<'a> {
+        Holding {
+            holding: &[],
+            writing,
+            asked: std::cell::RefCell::new(vec![]),
+        }
+    }
+
+    fn says(name: &str, values: &[&str], negated: bool) -> Predicate {
+        Predicate::CheckIs {
+            name: name.to_string(),
+            values: values.iter().map(ToString::to_string).collect(),
+            negated,
+        }
+    }
+
+    fn check(name: &str, negated: bool) -> Predicate {
+        Predicate::Check {
+            name: name.to_string(),
+            negated,
+        }
+    }
+
+    #[test]
+    fn a_check_holds_when_the_check_does() {
+        let checks = holding(&["docked"]);
+        let state = State::new("x", None).with_checks(&checks);
+
+        assert!(check("docked", false).matches(&state));
+        assert!(!check("docked", true).matches(&state));
+        assert!(!check("undocked", false).matches(&state));
+        assert!(check("undocked", true).matches(&state));
+    }
+
+    #[test]
+    fn with_no_checks_none_holds() {
+        let state = State::new("x", None);
+
+        assert!(!check("docked", false).matches(&state));
+        assert!(check("docked", true).matches(&state));
+    }
+
+    #[test]
+    fn a_check_is_only_asked_about_when_what_is_before_it_holds() {
+        let checks = holding(&["docked"]);
+        let state = State::new("Firefox", Some(Layout::Bsp)).with_checks(&checks);
+
+        let condition = |predicates: Vec<Predicate>| Condition::Predicates(predicates);
+
+        // the app is not Code, so the check is not looked at
+        let not_code = condition(vec![
+            Predicate::App {
+                names: vec![String::from("Code")],
+                negated: false,
+            },
+            check("docked", false),
+        ]);
+        assert!(!not_code.matches(&state));
+        assert!(checks.asked.borrow().is_empty());
+
+        // and when it is the app that does hold, it is
+        let firefox = condition(vec![
+            Predicate::App {
+                names: vec![String::from("Firefox")],
+                negated: false,
+            },
+            check("docked", false),
+        ]);
+        assert!(firefox.matches(&state));
+        assert_eq!(*checks.asked.borrow(), ["docked"]);
+    }
+
+    #[test]
+    fn the_entries_are_looked_at_in_order_and_the_first_that_holds_wins() {
+        let checks = holding(&["docked", "wide"]);
+        let state = State::new("x", None).with_checks(&checks);
+
+        let docked = Condition::Predicates(vec![check("docked", false)]);
+        let wide = Condition::Predicates(vec![check("wide", false)]);
+        let entries = [
+            (&Condition::Default, "default"),
+            (&docked, "docked"),
+            (&wide, "wide"),
+        ];
+
+        assert_eq!(
+            select(entries.iter().map(|(c, v)| (*c, *v)), &state),
+            Some("docked")
+        );
+        // nothing after the entry that matched is asked about
+        assert_eq!(*checks.asked.borrow(), ["docked"]);
+    }
+
+    #[test]
+    fn the_default_is_used_when_no_check_holds() {
+        let checks = holding(&[]);
+        let state = State::new("x", None).with_checks(&checks);
+
+        let docked = Condition::Predicates(vec![check("docked", false)]);
+        let entries = [(&docked, "docked"), (&Condition::Default, "default")];
+
+        assert_eq!(
+            select(entries.iter().map(|(c, v)| (*c, *v)), &state),
+            Some("default")
+        );
+    }
+
+    #[test]
+    fn a_check_does_not_need_the_layout() {
+        assert!(!Condition::Predicates(vec![check("docked", false)]).needs_layout());
+    }
+
+    #[test]
+    fn a_check_is_a_string_match_when_it_is_compared() {
+        let checks = writing(&[("mode", "work")]);
+        let state = State::new("x", None).with_checks(&checks);
+
+        assert!(says("mode", &["work"], false).matches(&state));
+        assert!(says("mode", &["home", "work"], false).matches(&state));
+        assert!(!says("mode", &["home"], false).matches(&state));
+
+        assert!(!says("mode", &["work"], true).matches(&state));
+        assert!(says("mode", &["home"], true).matches(&state));
+        assert!(says("mode", &["home", "play"], true).matches(&state));
+    }
+
+    #[test]
+    fn a_string_is_matched_as_it_is_written() {
+        let checks = writing(&[("mode", "Work")]);
+        let state = State::new("x", None).with_checks(&checks);
+
+        assert!(!says("mode", &["work"], false).matches(&state));
+        assert!(says("mode", &["Work"], false).matches(&state));
+        assert!(!says("mode", &["Wor"], false).matches(&state));
+        assert!(!says("mode", &["Work "], false).matches(&state));
+    }
+
+    #[test]
+    fn nothing_is_said_when_it_could_not_be_found_out_what_the_command_writes() {
+        // it did not exit with 0, or was not run
+        let state = State::new("x", None);
+
+        assert!(!says("mode", &["work"], false).matches(&state));
+        assert!(!says("mode", &["work"], true).matches(&state));
+
+        let checks = writing(&[]);
+        let state = State::new("x", None).with_checks(&checks);
+        assert!(!says("mode", &["work"], false).matches(&state));
+        assert!(!says("mode", &["work"], true).matches(&state));
+    }
+
+    #[test]
+    fn a_string_match_is_asked_about_only_when_it_is_reached() {
+        let checks = writing(&[("mode", "work")]);
+        let state = State::new("Firefox", None).with_checks(&checks);
+
+        let not_code = Condition::Predicates(vec![
+            Predicate::App {
+                names: vec![String::from("Code")],
+                negated: false,
+            },
+            says("mode", &["work"], false),
+        ]);
+        assert!(!not_code.matches(&state));
+        assert!(checks.asked.borrow().is_empty());
+    }
+
+    #[test]
+    fn the_same_condition_can_be_used_both_ways() {
+        let checks = Holding {
+            holding: &["mode"],
+            writing: &[("mode", "work")],
+            asked: std::cell::RefCell::new(vec![]),
+        };
+        let state = State::new("x", None).with_checks(&checks);
+
+        let both =
+            Condition::Predicates(vec![check("mode", false), says("mode", &["work"], false)]);
+        assert!(both.matches(&state));
     }
 }

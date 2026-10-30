@@ -107,7 +107,44 @@ whkd looks at its whkdrc while it runs, and when the file changes it checks it a
 A reload starts the daemon again, so it is not paused afterwards even if it was, and a whkd that was started in a
 terminal carries on in the same terminal while the prompt comes back. `whkd --no-hotload` turns it off.
 
-## Ignoring applications
+## Conditions of your own
+
+A condition can be defined once, with a directive after the other directives, and used by its name wherever a condition
+can be used:
+
+```
+.shell pwsh
+.when docked : ping -n 1 -w 100 10.0.0.1 >nul
+.when mode   : type "%USERPROFILE%\mode.txt"
+
+alt + h when docked                 : komorebic focus left
+alt + j when !docked & layout = bsp : komorebic focus down
+alt + k [
+    docked          : komorebic focus up
+    mode = work     : echo working
+    mode != holiday : echo not on holiday
+    Default         : echo neither
+]
+```
+
+- `.when name : command` defines `name`, and on its own it is true or false: it holds when the command exits with 0.
+  The command goes on to the next line like any other, with a `\`
+- `name = value` compares what the command writes instead: it holds when the command exits with 0 and what it wrote,
+  without the white space around it, is `value`, or one of `a | b | c`. `name != value` is the opposite. The same
+  definition can be used both ways. If the command does not exit with 0, or cannot be run, nothing can be said about what
+  it writes, and neither `=` nor `!=` holds, as for a layout that komorebic could not be asked about
+- A value is made of letters, digits, `_`, `-` and `.`, with single spaces between words, and is matched as it is
+  written, with the same case: after `.when mode : type mode.txt`, `mode = work` holds when the file says `work`
+- `name` is a condition like `app = ...` and `layout = ...`: in a `when` guard and on the lines of a block, and it can be
+  joined to them with `&`. `!name` is the opposite
+- A name is made of letters, digits and `_`, starts with a letter, and is defined once. `Default`, `Ignore`, `app`,
+  `layout` and `when` already mean something, and are not names
+- Where a name is defined, it is what a bare `name` means. A process that is called the same is still `app = name`. A
+  name that is not defined is a process name, as it always was
+- A condition that is defined and never used is flagged by `whkd validate`, as is a `!name` for one that is not defined,
+  with a suggestion if it looks like a typo
+- The conditions are looked at in the order that the entries are, only when what is before them on their line holds, and
+  not at all for an entry that comes after the one that is used. Put what is cheap to find out first
 
 To have nothing run while some applications have focus, list them in a directive, after the other directives, instead
 of giving every binding an `Ignore` entry for them:

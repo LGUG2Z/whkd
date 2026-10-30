@@ -38,21 +38,26 @@ pub const OR: char = '|';
 /// `app = a & layout = b`
 pub const AND: char = '&';
 
+/// `!docked`: the opposite of a condition that `.when` defines
+pub const NOT: char = '!';
+
 pub const SHELL: &str = ".shell";
 pub const PAUSE: &str = ".pause";
 pub const PAUSE_HOOK: &str = ".pause_hook";
 pub const WHEEL_COOLDOWN: &str = ".wheel_cooldown";
 pub const GESTURE_COOLDOWN: &str = ".gesture_cooldown";
 pub const IGNORE_APPS: &str = ".ignore";
+pub const DEFINE_CHECK: &str = ".when";
 
 /// The directives, in the order they must appear
-pub const DIRECTIVES: [&str; 6] = [
+pub const DIRECTIVES: [&str; 7] = [
     SHELL,
     PAUSE,
     PAUSE_HOOK,
     WHEEL_COOLDOWN,
     GESTURE_COOLDOWN,
     IGNORE_APPS,
+    DEFINE_CHECK,
 ];
 
 /// `keys when condition : command`

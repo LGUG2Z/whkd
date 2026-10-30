@@ -87,6 +87,33 @@ fn escape(text: &str) -> String {
     out
 }
 
+/// What a word is when a letter is left out of it or two of them are the wrong way round, which is
+/// how a word is most often mistyped
+fn near_misses(words: &[&str]) -> Vec<String> {
+    let mut all = vec![];
+
+    for word in words {
+        let chars: Vec<char> = word.chars().collect();
+
+        for at in 0..chars.len() {
+            let mut left_out = chars.clone();
+            left_out.remove(at);
+            all.push(left_out.into_iter().collect::<String>());
+
+            if at + 1 < chars.len() && chars[at] != chars[at + 1] {
+                let mut swapped = chars.clone();
+                swapped.swap(at, at + 1);
+                all.push(swapped.into_iter().collect::<String>());
+            }
+        }
+    }
+
+    all.retain(|candidate| !candidate.is_empty() && !words.contains(&candidate.as_str()));
+    all.sort();
+    all.dedup();
+    all.iter().map(|candidate| escape(candidate)).collect()
+}
+
 fn alternation(words: &[String]) -> String {
     let mut words: Vec<&String> = words.iter().collect();
     words.sort_by_key(|word| std::cmp::Reverse(word.len()));
@@ -280,8 +307,34 @@ pub fn grammar(vocabulary: &Vocabulary) -> Value {
                     ]
                 },
                 {
+                    "match": format!("(!)(?!=)[ \\t]*({IDENT})"),
+                    "captures": {
+                        "1": { "name": "keyword.operator.logical.whkdrc" },
+                        "2": { "name": "entity.name.function.check.whkdrc" }
+                    }
+                },
+                {
+                    // a name that is nearly `app` or `layout`, and so is probably meant to be
                     "name": "invalid.illegal.unknown-condition.whkdrc",
-                    "match": format!("{BEFORE_WORD}{IDENT}(?=[ \\t]*(?:{not_equals}|{equals}))")
+                    "match": format!(
+                        "(?i:{BEFORE_WORD}(?:{}){AFTER_WORD}(?=[ \\t]*(?:{not_equals}|{equals})))",
+                        near_misses(&syntax::PREDICATES).join("|")
+                    )
+                },
+                {
+                    // `mode = work`, where `mode` is a condition that `.when` defines
+                    "begin": format!(
+                        "{BEFORE_WORD}({IDENT}){AFTER_WORD}[ \\t]*{comparison}"
+                    ),
+                    "beginCaptures": {
+                        "1": { "name": "entity.name.function.check.whkdrc" },
+                        "2": { "name": "keyword.operator.comparison.whkdrc" }
+                    },
+                    "end": value_end,
+                    "patterns": [
+                        { "name": "keyword.operator.logical.whkdrc", "match": or },
+                        { "name": "string.unquoted.check-value.whkdrc", "match": process }
+                    ]
                 },
                 { "name": "keyword.operator.comparison.whkdrc", "match": format!("{not_equals}|{equals}") },
                 { "name": "keyword.operator.logical.whkdrc", "match": and },
@@ -349,7 +402,7 @@ pub fn grammar(vocabulary: &Vocabulary) -> Value {
         add(
             format!("entry-{suffix}"),
             json!({
-                "begin": r"^(?=[ \t]*[\p{L}_])",
+                "begin": r"^(?=[ \t]*[\p{L}_!])",
                 "end": "(?=#)|$",
                 "patterns": [
                     { "include": "#condition" },
@@ -416,6 +469,26 @@ pub fn grammar(vocabulary: &Vocabulary) -> Value {
         }),
     );
 
+    // `.when docked : command`: a condition, which is decided by a command that is always run in cmd
+    add(
+        "define-check".into(),
+        json!({
+            "begin": format!(
+                r"^[ \t]*({}){AFTER_WORD}[ \t]*({IDENT})?[ \t]*({})?",
+                directive(syntax::DEFINE_CHECK),
+                escape(&syntax::DELIMITER.to_string())
+            ),
+            "beginCaptures": {
+                "1": { "name": "keyword.control.directive.whkdrc" },
+                "2": { "name": "entity.name.function.check.whkdrc" },
+                "3": { "name": "punctuation.separator.delimiter.whkdrc" }
+            },
+            "end": COMMAND_END,
+            "contentName": BATCH.content_name(),
+            "patterns": BATCH.command_patterns()
+        }),
+    );
+
     // `.ignore Firefox | Code`: process names, like the values of `app =`
     add(
         "ignore-apps".into(),
@@ -451,6 +524,7 @@ pub fn grammar(vocabulary: &Vocabulary) -> Value {
             json!({ "include": "#pause" }),
             json!({ "include": "#wheel-cooldown" }),
             json!({ "include": "#ignore-apps" }),
+            json!({ "include": "#define-check" }),
             json!({ "include": format!("#block-{suffix}") }),
             json!({ "include": format!("#when-{suffix}") }),
             json!({ "include": format!("#binding-{suffix}") }),

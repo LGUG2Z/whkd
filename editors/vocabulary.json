@@ -6,7 +6,8 @@
     ".pause_hook",
     ".wheel_cooldown",
     ".gesture_cooldown",
-    ".ignore"
+    ".ignore",
+    ".when"
   ],
   "gestures": [
     "swipe3",

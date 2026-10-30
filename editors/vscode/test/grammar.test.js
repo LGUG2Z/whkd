@@ -424,6 +424,60 @@ test('the applications of .ignore are process names', async () => {
   assertContains(binding, 'komorebic', 'meta.embedded.line.powershell');
 });
 
+test('conditions that a command decides are defined with .when and used by name', async () => {
+  const lines = await fixture('checks.whkdrc');
+
+  const docked = lines.find((line) => rest(line).startsWith('.when docked'));
+  assertScope(docked, '.when', 'keyword.control.directive');
+  assertScope(docked, 'docked', 'entity.name.function.check');
+  assertScope(docked, ':', 'punctuation.separator.delimiter');
+  // the command is cmd, whatever the shell is
+  assertContains(docked, 'ping', 'meta.embedded.line.batchfile');
+  assertNotContains(docked, 'ping', 'meta.embedded.line.powershell');
+  assertScope(docked, '# the dock can be reached', 'comment.line');
+
+  // and goes on to the next line like any other command
+  const continued = lines.find((line) => rest(line).trim() === '&& echo wide');
+  assert.ok(continued, 'the continued line');
+  for (const tok of continued.filter((t) => t.text.trim())) {
+    assert.ok(has(tok, 'meta.embedded.line.batchfile'), `${JSON.stringify(tok.text)}: ${tok.scopes.join(' ')}`);
+  }
+
+  // the opposite, in a guard and as an entry of a block
+  const guard = lineWith(lines, 'alt + j when');
+  assertScope(guard, '!', 'keyword.operator.logical');
+  assertScope(guard, 'docked', 'entity.name.function.check');
+  assertScope(guard, 'bsp', 'constant.other.layout');
+
+  const entry = lineWith(lines, '!wide');
+  assertScope(entry, '!', 'keyword.operator.logical');
+  assertScope(entry, 'wide', 'entity.name.function.check');
+  assertContains(entry, 'echo', 'meta.embedded.line.powershell');
+
+  // `!=` is still a comparison
+  const code = lineWith(lines, 'app = Code & !docked');
+  assertScope(code, '=', 'keyword.operator.comparison');
+  assertScope(code, 'Code', 'entity.name.type.process');
+
+  // what a condition writes is compared with values
+  const compared = lineWith(lines, 'alt + l when');
+  assertScope(compared, 'mode', 'entity.name.function.check');
+  assertScope(compared, '=', 'keyword.operator.comparison');
+  assertScope(compared, 'work', 'string.unquoted.check-value');
+  assertScope(compared, 'home', 'string.unquoted.check-value');
+  assertScope(compared, '|', 'keyword.operator.logical');
+  assertScope(compared, 'layout', 'variable.parameter.condition');
+
+  const chrome = lineWith(lines, 'mode != Google Chrome');
+  assertScope(chrome, 'mode', 'entity.name.function.check');
+  assertScope(chrome, '!=', 'keyword.operator.comparison');
+  assertScope(chrome, 'Google Chrome', 'string.unquoted.check-value');
+
+  // the bindings after the definitions are as they were
+  assertScope(lineWith(lines, 'alt + h when'), 'when', 'keyword.control.when');
+  assertScope(lineWith(lines, 'Default : echo default'), 'Default', 'keyword.other.default');
+});
+
 test('mistakes are marked invalid, like the parser rejects them', async () => {
   const layouts = await fixture('invalid/unknown-layout.whkdrc');
   assertScope(lineWith(layouts, 'a typo'), 'bpsp', 'invalid.illegal.unknown-layout');
@@ -449,7 +503,7 @@ test('without a valid .shell the commands are plain strings', async () => {
 });
 
 test('valid fixtures contain nothing marked invalid', async () => {
-  for (const name of ['basic', 'blocks', 'when', 'cmd', 'tricky', 'mouse', 'gestures', 'continuation', 'braces', 'ignore']) {
+  for (const name of ['basic', 'blocks', 'when', 'cmd', 'tricky', 'mouse', 'gestures', 'continuation', 'braces', 'ignore', 'checks']) {
     const lines = await fixture(`${name}.whkdrc`);
     for (const line of lines) {
       for (const tok of line) {

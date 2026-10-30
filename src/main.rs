@@ -533,7 +533,7 @@ fn choose_command(
         None
     };
 
-    let state = State { app, layout };
+    let state = State::new(app, layout);
 
     select(entries.iter().map(|e| (&e.condition, &e.command)), &state)
         .filter(|cmd| cmd.as_str() != whkd_parser::syntax::IGNORE)

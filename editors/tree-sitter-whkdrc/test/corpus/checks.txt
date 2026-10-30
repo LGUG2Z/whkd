@@ -1,0 +1,111 @@
+================================================================================
+conditions that a command decides
+================================================================================
+
+.shell pwsh
+.pause alt + p
+.ignore Firefox
+.when docked : ping -n 1 -w 100 10.0.0.1 >nul # the dock can be reached
+.when wide : cmd /c exit 0 \
+    && echo wide
+.when mode : type mode.txt # what it writes is compared with a value
+
+alt + h when docked : komorebic focus left
+alt + j when !docked & layout = bsp : komorebic focus down
+alt + l when mode = work | home & layout != bsp : komorebic focus right
+alt + k [
+    docked  : komorebic focus up
+    !wide   : echo narrow
+    app = Code & !docked : echo code and not docked
+    mode != Google Chrome : echo not chrome mode
+    Default : echo default
+]
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (shell_directive
+    (shell_name))
+  (pause_directive
+    (hotkeys
+      (key)
+      (key)))
+  (ignore_directive
+    (app_name))
+  (check_directive
+    (check_name)
+    (command))
+  (comment)
+  (check_directive
+    (check_name)
+    (command))
+  (check_directive
+    (check_name)
+    (command))
+  (comment)
+  (binding
+    (hotkeys
+      (key)
+      (key))
+    (when_clause
+      (condition
+        (process_name)))
+    (command))
+  (binding
+    (hotkeys
+      (key)
+      (key))
+    (when_clause
+      (condition
+        (negated_check
+          (check_name))
+        (layout_predicate
+          (comparison)
+          (layout_name))))
+    (command))
+  (binding
+    (hotkeys
+      (key)
+      (key))
+    (when_clause
+      (condition
+        (check_predicate
+          (check_name)
+          (comparison)
+          (check_value)
+          (check_value))
+        (layout_predicate
+          (comparison)
+          (layout_name))))
+    (command))
+  (block
+    (hotkeys
+      (key)
+      (key))
+    (entry
+      (condition
+        (process_name))
+      (command))
+    (entry
+      (condition
+        (negated_check
+          (check_name)))
+      (command))
+    (entry
+      (condition
+        (app_predicate
+          (comparison)
+          (app_name))
+        (negated_check
+          (check_name)))
+      (command))
+    (entry
+      (condition
+        (check_predicate
+          (check_name)
+          (comparison)
+          (check_value)))
+      (command))
+    (entry
+      (default)
+      (command))))

@@ -127,6 +127,7 @@ mod tests {
             wheel_cooldown: None,
             gesture_cooldown: None,
             ignore: vec![],
+            checks: vec![],
         }
     }
 

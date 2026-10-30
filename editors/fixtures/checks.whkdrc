@@ -1,0 +1,18 @@
+.shell pwsh
+.pause alt + p
+.ignore Firefox
+.when docked : ping -n 1 -w 100 10.0.0.1 >nul # the dock can be reached
+.when wide : cmd /c exit 0 \
+    && echo wide
+.when mode : type mode.txt # what it writes is compared with a value
+
+alt + h when docked : komorebic focus left
+alt + j when !docked & layout = bsp : komorebic focus down
+alt + l when mode = work | home & layout != bsp : komorebic focus right
+alt + k [
+    docked  : komorebic focus up
+    !wide   : echo narrow
+    app = Code & !docked : echo code and not docked
+    mode != Google Chrome : echo not chrome mode
+    Default : echo default
+]

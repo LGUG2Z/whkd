@@ -33,6 +33,7 @@ module.exports = grammar({
         optional(seq($._eol, $.wheel_cooldown_directive)),
         optional(seq($._eol, $.gesture_cooldown_directive)),
         optional(seq($._eol, $.ignore_directive)),
+        repeat(seq($._eol, $.check_directive)),
         repeat1(seq($._eol, $._item)),
         optional($._eol),
       ),
@@ -46,6 +47,10 @@ module.exports = grammar({
     wheel_cooldown_directive: ($) => seq('.wheel_cooldown', $.number),
     gesture_cooldown_directive: ($) => seq('.gesture_cooldown', $.number),
     ignore_directive: ($) => seq('.ignore', sep1($.app_name, '|')),
+    // `.when docked : command`, whose command is run in cmd whatever the shell is
+    check_directive: ($) =>
+      seq('.when', $.check_name, ':', $.command),
+    check_name: (_) => /[\p{L}_][\p{L}\p{N}_]*/,
     number: (_) => /[0-9]+/,
 
     // keys : command, optionally guarded by `when` and a condition
@@ -69,7 +74,24 @@ module.exports = grammar({
     default: (_) => 'Default',
 
     condition: ($) => seq($._term, repeat(seq('&', $._term))),
-    _term: ($) => choice($.app_predicate, $.layout_predicate, $.process_name),
+    _term: ($) =>
+      choice(
+        $.app_predicate,
+        $.layout_predicate,
+        $.negated_check,
+        $.check_predicate,
+        $.process_name,
+      ),
+    // the opposite of a condition that `.when` defines
+    negated_check: ($) => seq('!', $.check_name),
+    // what a condition that `.when` defines writes is, or is not, one of the values: which names
+    // those are is for the parser to say
+    check_predicate: ($) =>
+      seq(
+        alias($._process_name, $.check_name),
+        $.comparison,
+        sep1(alias($.app_name, $.check_value), '|'),
+      ),
     app_predicate: ($) => seq('app', $.comparison, sep1($.app_name, '|')),
     layout_predicate: ($) =>
       seq('layout', $.comparison, sep1($.layout_name, '|')),

@@ -2,7 +2,7 @@
 
 (comment) @comment
 
-[".shell" ".pause" ".pause_hook" ".wheel_cooldown" ".gesture_cooldown" ".ignore"] @keyword.directive
+[".shell" ".pause" ".pause_hook" ".wheel_cooldown" ".gesture_cooldown" ".ignore" ".when"] @keyword.directive
 
 (shell_name) @constant.builtin
 (number) @number
@@ -24,7 +24,11 @@
 ((key) @constant.builtin
   (#any-of? @constant.builtin "swipe3" "Swipe3" "SWIPE3" "swipe4" "Swipe4" "SWIPE4" "swipe3left" "Swipe3left" "SWIPE3LEFT" "swipe3right" "Swipe3right" "SWIPE3RIGHT" "swipe3up" "Swipe3up" "SWIPE3UP" "swipe3down" "Swipe3down" "SWIPE3DOWN" "swipe4left" "Swipe4left" "SWIPE4LEFT" "swipe4right" "Swipe4right" "SWIPE4RIGHT" "swipe4up" "Swipe4up" "SWIPE4UP" "swipe4down" "Swipe4down" "SWIPE4DOWN" "Swipe3" "Swipe4" "Swipe3Left" "Swipe3Right" "Swipe3Up" "Swipe3Down" "Swipe4Left" "Swipe4Right" "Swipe4Up" "Swipe4Down"))
 
-["+" "&" "|" "=" "!="] @operator
+["+" "&" "|" "=" "!=" "!"] @operator
+
+; the conditions that `.when` defines
+(check_name) @function
+(check_value) @string
 
 [":"] @punctuation.delimiter
 ["[" "]"] @punctuation.bracket

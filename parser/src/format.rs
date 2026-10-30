@@ -13,6 +13,7 @@ use crate::parse;
 use crate::syntax::is_ident_continue;
 use crate::syntax::is_ident_start;
 use crate::syntax::is_value_char;
+use crate::syntax::DEFINE_CHECK;
 use crate::syntax::GESTURE_COOLDOWN;
 use crate::syntax::IGNORE_APPS;
 use crate::syntax::PAUSE;
@@ -295,6 +296,25 @@ fn classify(text: &str, in_block: bool) -> Option<Item> {
         }
     }
 
+    if lx.keyword(DEFINE_CHECK) {
+        lx.rest = &lx.rest[DEFINE_CHECK.len()..];
+        lx.skip_inline();
+        let name = lx.take_while(is_ident_continue);
+        lx.skip_inline();
+        if name.is_empty() || !lx.eat(':') {
+            return None;
+        }
+
+        let (command, comment) = lx.command();
+        let content = if command.is_empty() {
+            format!("{DEFINE_CHECK} {name} :")
+        } else {
+            format!("{DEFINE_CHECK} {name} : {command}")
+        };
+
+        return Some(Item::Directive { content, comment });
+    }
+
     if lx.keyword(IGNORE_APPS) {
         lx.rest = &lx.rest[IGNORE_APPS.len()..];
         let apps = lx.values()?;
@@ -483,6 +503,14 @@ impl<'a> Lexer<'a> {
     }
 
     fn term(&mut self) -> Option<String> {
+        // `!docked`, which is not `!=`
+        if self.rest.starts_with('!') && !self.rest.starts_with("!=") {
+            self.rest = &self.rest[1..];
+            self.skip_inline();
+            let name = self.take_while(is_ident_continue);
+            return (!name.is_empty()).then(|| format!("!{name}"));
+        }
+
         if !self.peek().is_some_and(is_ident_start) {
             return None;
         }
@@ -1096,5 +1124,37 @@ alt + when : y
         // it does not parse, so nothing is touched
         let src = ".shell cmd\n.ignore\nf1:x\n";
         assert_eq!(format(src), src);
+    }
+
+    #[test]
+    fn conditions_are_defined_in_the_same_shape_and_aligned_like_other_directives() {
+        check(
+            ".shell cmd\n.when   docked:ping -n 1 10.0.0.1   # the dock\n.when wide :  echo  hi\nf1 when docked:x\n",
+            ".shell cmd\n.when docked : ping -n 1 10.0.0.1 # the dock\n.when wide : echo  hi\nf1 when docked : x\n",
+        );
+    }
+
+    #[test]
+    fn a_condition_that_is_defined_can_be_continued() {
+        check(
+            ".shell cmd\n.when docked:ping \\\n -n 1 \\\n\t10.0.0.1\nf1 when docked:x\n",
+            ".shell cmd\n.when docked : ping \\\n    -n 1 \\\n    10.0.0.1\nf1 when docked : x\n",
+        );
+    }
+
+    #[test]
+    fn the_opposite_of_a_condition_is_written_with_the_bang_against_the_name() {
+        check(
+            ".shell cmd\n.when docked : x\nf1 when !  docked&layout=bsp:a\nf2 [\n!docked:b\n  docked  &  !   docked:c\n  Default:d\n]\nf3 when app!=Code&!docked:e\n",
+            ".shell cmd\n.when docked : x\nf1 when !docked & layout = bsp : a\nf2 [\n    !docked          : b\n    docked & !docked : c\n    Default          : d\n]\nf3 when app != Code & !docked : e\n",
+        );
+    }
+
+    #[test]
+    fn a_condition_compared_with_values_is_formatted_like_app_and_layout() {
+        check(
+            ".shell cmd\n.when mode:x\nf1 when mode=work|home&layout!=bsp:a\nf2 [\n mode!=Google   Chrome:b\n]\n",
+            ".shell cmd\n.when mode : x\nf1 when mode = work | home & layout != bsp : a\nf2 [\n    mode != Google Chrome : b\n]\n",
+        );
     }
 }

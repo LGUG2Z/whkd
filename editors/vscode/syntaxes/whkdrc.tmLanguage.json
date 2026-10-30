@@ -31,6 +31,9 @@
       "include": "#ignore-apps"
     },
     {
+      "include": "#define-check"
+    },
+    {
       "include": "#block-plain"
     },
     {
@@ -335,8 +338,41 @@
           ]
         },
         {
-          "match": "(?<![\\p{L}\\p{N}_])[\\p{L}_][\\p{L}\\p{N}_]*(?=[ \\t]*(?:!=|=))",
+          "captures": {
+            "1": {
+              "name": "keyword.operator.logical.whkdrc"
+            },
+            "2": {
+              "name": "entity.name.function.check.whkdrc"
+            }
+          },
+          "match": "(!)(?!=)[ \\t]*([\\p{L}_][\\p{L}\\p{N}_]*)"
+        },
+        {
+          "match": "(?i:(?<![\\p{L}\\p{N}_])(?:alyout|ap|ayout|laout|laoyut|layot|layotu|layou|layuot|layut|lyaout|lyout|pap|pp)(?![\\p{L}\\p{N}_])(?=[ \\t]*(?:!=|=)))",
           "name": "invalid.illegal.unknown-condition.whkdrc"
+        },
+        {
+          "begin": "(?<![\\p{L}\\p{N}_])([\\p{L}_][\\p{L}\\p{N}_]*)(?![\\p{L}\\p{N}_])[ \\t]*(!=|=)",
+          "beginCaptures": {
+            "1": {
+              "name": "entity.name.function.check.whkdrc"
+            },
+            "2": {
+              "name": "keyword.operator.comparison.whkdrc"
+            }
+          },
+          "end": "(?=[:\\&\\#]|$)",
+          "patterns": [
+            {
+              "match": "\\|",
+              "name": "keyword.operator.logical.whkdrc"
+            },
+            {
+              "match": "[\\p{L}\\p{N}_.-]+(?:[ \\t]+[\\p{L}\\p{N}_.-]+)*",
+              "name": "string.unquoted.check-value.whkdrc"
+            }
+          ]
         },
         {
           "match": "!=|=",
@@ -356,8 +392,37 @@
         }
       ]
     },
+    "define-check": {
+      "begin": "^[ \\t]*(\\.when)(?![\\p{L}\\p{N}_])[ \\t]*([\\p{L}_][\\p{L}\\p{N}_]*)?[ \\t]*(:)?",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.directive.whkdrc"
+        },
+        "2": {
+          "name": "entity.name.function.check.whkdrc"
+        },
+        "3": {
+          "name": "punctuation.separator.delimiter.whkdrc"
+        }
+      },
+      "contentName": "meta.embedded.line.batchfile",
+      "end": "(?=#)|(?<!^\\\\|[ \\t]\\\\|^\\\\\\n|[ \\t]\\\\\\n)$",
+      "patterns": [
+        {
+          "captures": {
+            "1": {
+              "name": "keyword.other.ignore.whkdrc"
+            }
+          },
+          "match": "\\G[ \\t]*(Ignore)[ \\t]*(?=#|$)"
+        },
+        {
+          "include": "source.batchfile"
+        }
+      ]
+    },
     "entry-batch": {
-      "begin": "^(?=[ \\t]*[\\p{L}_])",
+      "begin": "^(?=[ \\t]*[\\p{L}_!])",
       "end": "(?=#)|$",
       "patterns": [
         {
@@ -369,7 +434,7 @@
       ]
     },
     "entry-plain": {
-      "begin": "^(?=[ \\t]*[\\p{L}_])",
+      "begin": "^(?=[ \\t]*[\\p{L}_!])",
       "end": "(?=#)|$",
       "patterns": [
         {
@@ -381,7 +446,7 @@
       ]
     },
     "entry-powershell": {
-      "begin": "^(?=[ \\t]*[\\p{L}_])",
+      "begin": "^(?=[ \\t]*[\\p{L}_!])",
       "end": "(?=#)|$",
       "patterns": [
         {
@@ -588,6 +653,9 @@
           "include": "#ignore-apps"
         },
         {
+          "include": "#define-check"
+        },
+        {
           "include": "#block-batch"
         },
         {
@@ -625,6 +693,9 @@
         },
         {
           "include": "#ignore-apps"
+        },
+        {
+          "include": "#define-check"
         },
         {
           "include": "#block-powershell"
