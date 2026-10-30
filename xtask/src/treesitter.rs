@@ -48,6 +48,7 @@ module.exports = grammar({
         optional(seq($._eol, $.pause_hook_directive)),
         optional(seq($._eol, $.wheel_cooldown_directive)),
         optional(seq($._eol, $.gesture_cooldown_directive)),
+        optional(seq($._eol, $.ignore_directive)),
         repeat1(seq($._eol, $._item)),
         optional($._eol),
       ),
@@ -60,6 +61,7 @@ module.exports = grammar({
     pause_hook_directive: ($) => seq('@@PAUSE_HOOK@@', optional($.command)),
     wheel_cooldown_directive: ($) => seq('@@WHEEL_COOLDOWN@@', $.number),
     gesture_cooldown_directive: ($) => seq('@@GESTURE_COOLDOWN@@', $.number),
+    ignore_directive: ($) => seq('@@IGNORE_APPS@@', sep1($.app_name, '@@OR@@')),
     number: (_) => /[0-9]+/,
 
     // keys : command, optionally guarded by `when` and a condition
@@ -89,8 +91,9 @@ module.exports = grammar({
       seq('@@LAYOUT@@', $.comparison, sep1($.layout_name, '@@OR@@')),
     comparison: (_) => choice('@@EQUALS@@', '@@NOT_EQUALS@@'),
 
-    // a bare process name, which may be spelt like a predicate when nothing follows it
-    process_name: ($) => choice($._process_name, '@@APP@@', '@@LAYOUT@@'),
+    // a bare process name, which may be spelt like a predicate or a guard when nothing follows it
+    process_name: ($) =>
+      choice($._process_name, '@@APP@@', '@@LAYOUT@@', '@@WHEN@@'),
 
     // keys joined by `+`. A group, `{a,b}`, may also be next to a key or another group without one:
     // what it stands for has the `+` in it (`{_,shift +} {h,j}`)
@@ -120,9 +123,9 @@ module.exports = grammar({
     group_element: (_) => /[^{},\r\n]+/,
 
     // the rest of the line, up to a comment. A `\` that ends a line, after a space (or at the start
-    // of the command), goes on to the next
+    // of the command), goes on to the next, and so does a `\` that is all there is on that line
     command: (_) =>
-      /(\\[ \t]*\r?\n[ \t]*)?[^#\s]([^#\r\n]|[ \t]\\[ \t]*\r?\n[ \t]*)*/,
+      /(\\[ \t]*\r?\n[ \t]*)*[^#\s]([^#\r\n]|[ \t]\\[ \t]*\r?\n[ \t]*(\\[ \t]*\r?\n[ \t]*)*)*/,
     comment: (_) => token(/#[^\r\n]*/),
 
     // the values of the conditions. Several words make one process name (`Google Chrome`), but
@@ -163,6 +166,7 @@ pub fn grammar_js(vocabulary: &Vocabulary) -> String {
         .replace("@@SHELL@@", shell)
         .replace("@@WHEEL_COOLDOWN@@", syntax::WHEEL_COOLDOWN)
         .replace("@@GESTURE_COOLDOWN@@", syntax::GESTURE_COOLDOWN)
+        .replace("@@IGNORE_APPS@@", syntax::IGNORE_APPS)
         .replace("@@PAUSE_HOOK@@", pause_hook)
         .replace("@@PAUSE@@", pause)
         .replace("@@DELIMITER@@", &syntax::DELIMITER.to_string())

@@ -127,6 +127,21 @@
     }
   },
   {
+    "type": "group",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "group_element",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "hotkeys",
     "named": true,
     "fields": {},
@@ -135,7 +150,26 @@
       "required": true,
       "types": [
         {
+          "type": "group",
+          "named": true
+        },
+        {
           "type": "key",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "ignore_directive",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "app_name",
           "named": true
         }
       ]
@@ -237,6 +271,10 @@
           "named": true
         },
         {
+          "type": "ignore_directive",
+          "named": true
+        },
+        {
           "type": "pause_directive",
           "named": true
         },
@@ -298,7 +336,15 @@
     "named": false
   },
   {
+    "type": ",",
+    "named": false
+  },
+  {
     "type": ".gesture_cooldown",
+    "named": false
+  },
+  {
+    "type": ".ignore",
     "named": false
   },
   {
@@ -359,6 +405,10 @@
     "named": true
   },
   {
+    "type": "group_element",
+    "named": true
+  },
+  {
     "type": "key",
     "named": true
   },
@@ -387,7 +437,15 @@
     "named": false
   },
   {
+    "type": "{",
+    "named": false
+  },
+  {
     "type": "|",
+    "named": false
+  },
+  {
+    "type": "}",
     "named": false
   }
 ]

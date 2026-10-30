@@ -32,6 +32,7 @@ module.exports = grammar({
         optional(seq($._eol, $.pause_hook_directive)),
         optional(seq($._eol, $.wheel_cooldown_directive)),
         optional(seq($._eol, $.gesture_cooldown_directive)),
+        optional(seq($._eol, $.ignore_directive)),
         repeat1(seq($._eol, $._item)),
         optional($._eol),
       ),
@@ -44,6 +45,7 @@ module.exports = grammar({
     pause_hook_directive: ($) => seq('.pause_hook', optional($.command)),
     wheel_cooldown_directive: ($) => seq('.wheel_cooldown', $.number),
     gesture_cooldown_directive: ($) => seq('.gesture_cooldown', $.number),
+    ignore_directive: ($) => seq('.ignore', sep1($.app_name, '|')),
     number: (_) => /[0-9]+/,
 
     // keys : command, optionally guarded by `when` and a condition
@@ -73,8 +75,9 @@ module.exports = grammar({
       seq('layout', $.comparison, sep1($.layout_name, '|')),
     comparison: (_) => choice('=', '!='),
 
-    // a bare process name, which may be spelt like a predicate when nothing follows it
-    process_name: ($) => choice($._process_name, 'app', 'layout'),
+    // a bare process name, which may be spelt like a predicate or a guard when nothing follows it
+    process_name: ($) =>
+      choice($._process_name, 'app', 'layout', 'when'),
 
     // keys joined by `+`. A group, `{a,b}`, may also be next to a key or another group without one:
     // what it stands for has the `+` in it (`{_,shift +} {h,j}`)
@@ -104,9 +107,9 @@ module.exports = grammar({
     group_element: (_) => /[^{},\r\n]+/,
 
     // the rest of the line, up to a comment. A `\` that ends a line, after a space (or at the start
-    // of the command), goes on to the next
+    // of the command), goes on to the next, and so does a `\` that is all there is on that line
     command: (_) =>
-      /(\\[ \t]*\r?\n[ \t]*)?[^#\s]([^#\r\n]|[ \t]\\[ \t]*\r?\n[ \t]*)*/,
+      /(\\[ \t]*\r?\n[ \t]*)*[^#\s]([^#\r\n]|[ \t]\\[ \t]*\r?\n[ \t]*(\\[ \t]*\r?\n[ \t]*)*)*/,
     comment: (_) => token(/#[^\r\n]*/),
 
     // the values of the conditions. Several words make one process name (`Google Chrome`), but

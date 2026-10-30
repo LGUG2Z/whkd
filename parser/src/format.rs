@@ -14,6 +14,7 @@ use crate::syntax::is_ident_continue;
 use crate::syntax::is_ident_start;
 use crate::syntax::is_value_char;
 use crate::syntax::GESTURE_COOLDOWN;
+use crate::syntax::IGNORE_APPS;
 use crate::syntax::PAUSE;
 use crate::syntax::PAUSE_HOOK;
 use crate::syntax::SHELL;
@@ -292,6 +293,16 @@ fn classify(text: &str, in_block: bool) -> Option<Item> {
                 comment: lx.tail()?,
             });
         }
+    }
+
+    if lx.keyword(IGNORE_APPS) {
+        lx.rest = &lx.rest[IGNORE_APPS.len()..];
+        let apps = lx.values()?;
+
+        return Some(Item::Directive {
+            content: format!("{IGNORE_APPS} {apps}"),
+            comment: lx.tail()?,
+        });
     }
 
     if lx.keyword(PAUSE_HOOK) {
@@ -1059,5 +1070,31 @@ alt + when : y
             ".shell cmd\n{alt,ctrl}+{h,j}:echo {a,b} \\\n {c,d}\n",
             ".shell cmd\n{alt,ctrl} + {h,j} : echo {a,b} \\\n    {c,d}\n",
         );
+    }
+
+    #[test]
+    fn the_ignore_directive_is_formatted_like_a_condition_with_alternatives() {
+        check(
+            ".shell cmd\n.ignore   Firefox|Google   Chrome  |Code\nf1:x\n",
+            ".shell cmd\n.ignore Firefox | Google Chrome | Code\nf1 : x\n",
+        );
+    }
+
+    #[test]
+    fn the_ignore_directive_is_aligned_with_the_other_directives() {
+        check(
+            ".shell cmd\n.wheel_cooldown 1 # a\n.ignore   Firefox|Code   # b\nf1:x\n",
+            &format!(
+                ".shell cmd\n{:<22} # a\n.ignore Firefox | Code # b\nf1 : x\n",
+                ".wheel_cooldown 1"
+            ),
+        );
+    }
+
+    #[test]
+    fn the_ignore_directive_with_nothing_to_ignore_is_left_alone() {
+        // it does not parse, so nothing is touched
+        let src = ".shell cmd\n.ignore\nf1:x\n";
+        assert_eq!(format(src), src);
     }
 }

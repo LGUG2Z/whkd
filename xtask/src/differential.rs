@@ -59,6 +59,8 @@ const SNIPPETS: &[&str] = &[
     ".shell cmd\n",
     ".pause alt + p\n",
     ".pause_hook x\n",
+    ".ignore Code\n",
+    ".ignore ",
     " \\",
     " \\\n",
     "{",
@@ -195,7 +197,11 @@ fn known_difference(
             let code = line.split('#').next().unwrap_or("").trim();
             let after_shell = code.starts_with(".shell") && code.split_whitespace().count() > 2;
             let after_block = code.starts_with(']') && code.len() > 1;
-            after_shell || after_block
+            // an entry can be on the line that opens the block
+            let after_open = code
+                .split_once('[')
+                .is_some_and(|(_, after)| !after.trim().is_empty());
+            after_shell || after_block || after_open
         });
 
         if more_on_the_line {
@@ -212,6 +218,11 @@ fn known_difference(
         if lone {
             return Some("a lone carriage return");
         }
+    }
+
+    // a key named `when` can be written right after a group, where the grammar has a guard
+    if parser_accepts && !tree_sitter_accepts && source.contains("}when") {
+        return Some("a key named when next to a group");
     }
 
     // what a group stands for is for the parser to say: whether the keys that come out of it are

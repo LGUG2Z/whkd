@@ -28,6 +28,9 @@
       "include": "#wheel-cooldown"
     },
     {
+      "include": "#ignore-apps"
+    },
+    {
       "include": "#block-plain"
     },
     {
@@ -452,6 +455,25 @@
         }
       ]
     },
+    "ignore-apps": {
+      "begin": "^[ \\t]*(\\.ignore)(?![\\p{L}\\p{N}_])",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.directive.whkdrc"
+        }
+      },
+      "end": "(?=#)|$",
+      "patterns": [
+        {
+          "match": "\\|",
+          "name": "keyword.operator.logical.whkdrc"
+        },
+        {
+          "match": "[\\p{L}\\p{N}_.-]+(?:[ \\t]+[\\p{L}\\p{N}_.-]+)*",
+          "name": "entity.name.type.process.whkdrc"
+        }
+      ]
+    },
     "layout-value": {
       "match": "(?<![\\p{L}\\p{N}_-])(?:[bB][sS][pP]|[cC][oO][lL][uU][mM][nN][sS]|[rR][oO][wW][sS]|[vV][eE][rR][tT][iI][cC][aA][lL][-_ ]?[sS][tT][aA][cC][kK]|[hH][oO][rR][iI][zZ][oO][nN][tT][aA][lL][-_ ]?[sS][tT][aA][cC][kK]|[uU][lL][tT][rR][aA][wW][iI][dD][eE][-_ ]?[vV][eE][rR][tT][iI][cC][aA][lL][-_ ]?[sS][tT][aA][cC][kK]|[gG][rR][iI][dD]|[rR][iI][gG][hH][tT][-_ ]?[mM][aA][iI][nN][-_ ]?[vV][eE][rR][tT][iI][cC][aA][lL][-_ ]?[sS][tT][aA][cC][kK]|[sS][cC][rR][oO][lL][lL][iI][nN][gG])(?![\\p{L}\\p{N}_-])",
       "name": "constant.other.layout.whkdrc"
@@ -563,6 +585,9 @@
           "include": "#wheel-cooldown"
         },
         {
+          "include": "#ignore-apps"
+        },
+        {
           "include": "#block-batch"
         },
         {
@@ -597,6 +622,9 @@
         },
         {
           "include": "#wheel-cooldown"
+        },
+        {
+          "include": "#ignore-apps"
         },
         {
           "include": "#block-powershell"

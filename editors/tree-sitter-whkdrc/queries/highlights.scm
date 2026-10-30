@@ -2,7 +2,7 @@
 
 (comment) @comment
 
-[".shell" ".pause" ".pause_hook" ".wheel_cooldown" ".gesture_cooldown"] @keyword.directive
+[".shell" ".pause" ".pause_hook" ".wheel_cooldown" ".gesture_cooldown" ".ignore"] @keyword.directive
 
 (shell_name) @constant.builtin
 (number) @number

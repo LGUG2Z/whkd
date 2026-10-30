@@ -1,0 +1,7 @@
+.shell pwsh
+.pause alt + p
+.wheel_cooldown 100
+.gesture_cooldown 300 # milliseconds
+.ignore Firefox | Google Chrome | my-app.v2 # nothing runs in these
+
+alt + h : komorebic focus left

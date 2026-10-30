@@ -406,6 +406,24 @@ test('groups in a hotkey are highlighted, with keys inside them', async () => {
   assertNotContains(command, 'Get-Process', 'meta.brace.expansion');
 });
 
+test('the applications of .ignore are process names', async () => {
+  const lines = await fixture('ignore.whkdrc');
+  const ignore = lineWith(lines, '.ignore');
+
+  assertScope(ignore, '.ignore', 'keyword.control.directive');
+  assertScope(ignore, 'Firefox', 'entity.name.type.process');
+  assertScope(ignore, 'Google Chrome', 'entity.name.type.process');
+  assertScope(ignore, 'my-app.v2', 'entity.name.type.process');
+  assertScope(ignore, '|', 'keyword.operator.logical', 0);
+  assertScope(ignore, '|', 'keyword.operator.logical', 1);
+  assertScope(ignore, '# nothing runs in these', 'comment.line');
+
+  // and the bindings after it are as they were
+  const binding = lineWith(lines, 'alt + h');
+  assertScope(binding, 'alt', 'keyword.other.modifier');
+  assertContains(binding, 'komorebic', 'meta.embedded.line.powershell');
+});
+
 test('mistakes are marked invalid, like the parser rejects them', async () => {
   const layouts = await fixture('invalid/unknown-layout.whkdrc');
   assertScope(lineWith(layouts, 'a typo'), 'bpsp', 'invalid.illegal.unknown-layout');
@@ -431,7 +449,7 @@ test('without a valid .shell the commands are plain strings', async () => {
 });
 
 test('valid fixtures contain nothing marked invalid', async () => {
-  for (const name of ['basic', 'blocks', 'when', 'cmd', 'tricky', 'mouse', 'gestures', 'continuation', 'braces']) {
+  for (const name of ['basic', 'blocks', 'when', 'cmd', 'tricky', 'mouse', 'gestures', 'continuation', 'braces', 'ignore']) {
     const lines = await fixture(`${name}.whkdrc`);
     for (const line of lines) {
       for (const tok of line) {

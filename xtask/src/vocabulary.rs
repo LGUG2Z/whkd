@@ -250,7 +250,8 @@ mod tests {
                 ".pause",
                 ".pause_hook",
                 ".wheel_cooldown",
-                ".gesture_cooldown"
+                ".gesture_cooldown",
+                ".ignore"
             ]
         );
         assert_eq!(vocabulary.shells, vec!["cmd", "pwsh", "powershell"]);

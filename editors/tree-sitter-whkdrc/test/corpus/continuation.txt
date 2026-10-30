@@ -18,6 +18,9 @@ alt + n [
 alt + e : explorer C:\Users\
 alt + w when layout = bsp : echo d \
     e # a comment
+alt + z : echo f \
+\
+    g
 
 --------------------------------------------------------------------------------
 
@@ -62,4 +65,9 @@ alt + w when layout = bsp : echo d \
           (comparison)
           (layout_name))))
     (command))
-  (comment))
+  (comment)
+  (binding
+    (hotkeys
+      (key)
+      (key))
+    (command)))

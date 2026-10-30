@@ -1,0 +1,36 @@
+================================================================================
+apps that nothing runs in
+================================================================================
+
+.shell pwsh
+.pause alt + p
+.wheel_cooldown 100
+.gesture_cooldown 300 # milliseconds
+.ignore Firefox | Google Chrome | my-app.v2 # nothing runs in these
+
+alt + h : komorebic focus left
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (shell_directive
+    (shell_name))
+  (pause_directive
+    (hotkeys
+      (key)
+      (key)))
+  (wheel_cooldown_directive
+    (number))
+  (gesture_cooldown_directive
+    (number))
+  (comment)
+  (ignore_directive
+    (app_name)
+    (app_name)
+    (app_name))
+  (comment)
+  (binding
+    (hotkeys
+      (key)
+      (key))
+    (command)))

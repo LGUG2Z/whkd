@@ -416,6 +416,20 @@ pub fn grammar(vocabulary: &Vocabulary) -> Value {
         }),
     );
 
+    // `.ignore Firefox | Code`: process names, like the values of `app =`
+    add(
+        "ignore-apps".into(),
+        json!({
+            "begin": format!(r"^[ \t]*({}){AFTER_WORD}", directive(syntax::IGNORE_APPS)),
+            "beginCaptures": { "1": { "name": "keyword.control.directive.whkdrc" } },
+            "end": "(?=#)|$",
+            "patterns": [
+                { "name": "keyword.operator.logical.whkdrc", "match": or },
+                { "name": "entity.name.type.process.whkdrc", "match": process }
+            ]
+        }),
+    );
+
     // `.shell` with something other than a shell after it
     add(
         "shell-unknown".into(),
@@ -436,6 +450,7 @@ pub fn grammar(vocabulary: &Vocabulary) -> Value {
             json!({ "include": format!("#pause-hook-{suffix}") }),
             json!({ "include": "#pause" }),
             json!({ "include": "#wheel-cooldown" }),
+            json!({ "include": "#ignore-apps" }),
             json!({ "include": format!("#block-{suffix}") }),
             json!({ "include": format!("#when-{suffix}") }),
             json!({ "include": format!("#binding-{suffix}") }),

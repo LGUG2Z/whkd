@@ -15,11 +15,14 @@ use std::process::ChildStdin;
 use std::process::Command;
 use std::process::Stdio;
 use std::sync::Arc;
+use std::sync::OnceLock;
 use std::time::Duration;
+use whkd_core::is_ignored;
 use whkd_core::select;
 use whkd_core::Condition;
 use whkd_core::GestureInput;
 use whkd_core::HotkeyBinding;
+use whkd_core::Layout;
 use whkd_core::MouseInput;
 use whkd_core::Shell;
 use whkd_core::State;
@@ -481,23 +484,43 @@ fn touchpad_diagnostic(
     }
 }
 
+/// The applications that no binding runs a command in, from the `.ignore` directive
+static IGNORED_APPS: OnceLock<Vec<String>> = OnceLock::new();
+
 /// The command to run for the entries bound to a key, given the current state
 fn select_command(entries: &[HkmData]) -> Option<String> {
     let app_name = active_win_pos_rs::get_active_window()
         .unwrap_or_default()
         .app_name;
 
+    choose_command(
+        entries,
+        &app_name,
+        IGNORED_APPS.get().map_or(&[], Vec::as_slice),
+        komorebi::focused_workspace_layout,
+    )
+}
+
+/// The command for the entries bound to a key, when the application with the focused window is
+/// `app`, and komorebi's layout is what `layout` says, which is only asked if a condition wants it
+fn choose_command(
+    entries: &[HkmData],
+    app: &str,
+    ignored: &[String],
+    layout: impl FnOnce() -> Option<Layout>,
+) -> Option<String> {
+    if is_ignored(ignored, app) {
+        return None;
+    }
+
     // only bother komorebi if a condition actually asks about it
     let layout = if entries.iter().any(|e| e.condition.needs_layout()) {
-        komorebi::focused_workspace_layout()
+        layout()
     } else {
         None
     };
 
-    let state = State {
-        app: &app_name,
-        layout,
-    };
+    let state = State { app, layout };
 
     select(entries.iter().map(|e| (&e.condition, &e.command)), &state)
         .filter(|cmd| cmd.as_str() != whkd_parser::syntax::IGNORE)
@@ -606,6 +629,8 @@ fn main() -> Result<()> {
     );
 
     spawn_shell(whkdrc.shell)?;
+
+    let _ = IGNORED_APPS.set(whkdrc.ignore.clone());
 
     let mut hkm = HotkeyManager::new();
     let pause_handle = hkm.pause_handle();
@@ -757,4 +782,137 @@ fn main() -> Result<()> {
     hkm.event_loop();
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+    use whkd_core::Predicate;
+
+    fn entry(condition: Condition, command: &str) -> HkmData {
+        HkmData::try_from(&HotkeyBinding {
+            keys: vec![String::from("alt"), String::from("h")],
+            command: command.to_string(),
+            condition,
+        })
+        .unwrap()
+    }
+
+    fn bsp() -> Condition {
+        Condition::Predicates(vec![Predicate::Layout {
+            layouts: vec![Layout::Bsp],
+            negated: false,
+        }])
+    }
+
+    fn names(names: &[&str]) -> Vec<String> {
+        names.iter().map(ToString::to_string).collect()
+    }
+
+    #[test]
+    fn nothing_runs_in_an_ignored_application_and_komorebi_is_not_asked() {
+        let entries = [
+            entry(Condition::Always, "plain"),
+            entry(Condition::app("Firefox"), "firefox"),
+            entry(bsp(), "bsp"),
+            entry(Condition::Default, "default"),
+        ];
+        let ignored = names(&["Firefox", "Google Chrome"]);
+
+        for app in ["Firefox", "Google Chrome"] {
+            let asked = Cell::new(false);
+            let found = choose_command(&entries, app, &ignored, || {
+                asked.set(true);
+                Some(Layout::Bsp)
+            });
+
+            assert_eq!(found, None, "{app}");
+            assert!(!asked.get(), "{app}");
+        }
+    }
+
+    #[test]
+    fn other_applications_are_chosen_for_as_usual() {
+        let entries = [
+            entry(Condition::app("Firefox"), "firefox"),
+            entry(bsp(), "bsp"),
+            entry(Condition::Default, "default"),
+        ];
+        let ignored = names(&["Code"]);
+
+        let pick = |app, layout| choose_command(&entries, app, &ignored, || layout);
+
+        assert_eq!(
+            pick("Firefox", Some(Layout::Grid)).as_deref(),
+            Some("firefox")
+        );
+        assert_eq!(pick("Notepad", Some(Layout::Bsp)).as_deref(), Some("bsp"));
+        assert_eq!(
+            pick("Notepad", Some(Layout::Grid)).as_deref(),
+            Some("default")
+        );
+        assert_eq!(pick("Notepad", None).as_deref(), Some("default"));
+    }
+
+    #[test]
+    fn an_application_is_ignored_by_its_exact_name() {
+        let entries = [entry(Condition::Default, "default")];
+        let ignored = names(&["Firefox"]);
+
+        let pick = |app| choose_command(&entries, app, &ignored, || None);
+
+        assert_eq!(pick("Firefox"), None);
+        assert_eq!(pick("firefox").as_deref(), Some("default"));
+        assert_eq!(
+            pick("Firefox Developer Edition").as_deref(),
+            Some("default")
+        );
+    }
+
+    #[test]
+    fn with_nothing_ignored_everything_runs() {
+        let entries = [entry(Condition::Always, "plain")];
+        assert_eq!(
+            choose_command(&entries, "Firefox", &[], || None).as_deref(),
+            Some("plain")
+        );
+    }
+
+    #[test]
+    fn komorebi_is_only_asked_when_a_condition_wants_to_know() {
+        let asked = Cell::new(0);
+        let layout = || {
+            asked.set(asked.get() + 1);
+            Some(Layout::Bsp)
+        };
+
+        let without = [entry(Condition::app("Firefox"), "firefox")];
+        assert_eq!(
+            choose_command(&without, "Firefox", &[], layout).as_deref(),
+            Some("firefox")
+        );
+        assert_eq!(asked.get(), 0);
+
+        let with = [entry(bsp(), "bsp")];
+        assert_eq!(
+            choose_command(&with, "Firefox", &[], layout).as_deref(),
+            Some("bsp")
+        );
+        assert_eq!(asked.get(), 1);
+    }
+
+    #[test]
+    fn the_ignore_command_still_runs_nothing() {
+        let entries = [
+            entry(Condition::app("Firefox"), whkd_parser::syntax::IGNORE),
+            entry(Condition::Default, "default"),
+        ];
+
+        assert_eq!(choose_command(&entries, "Firefox", &[], || None), None);
+        assert_eq!(
+            choose_command(&entries, "Code", &[], || None).as_deref(),
+            Some("default")
+        );
+    }
 }

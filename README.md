@@ -95,6 +95,24 @@ running. It also reports things that parse but are probably a mistake:
 - a binding with an empty command
 - (as advice) a hotkey that only has conditional bindings and no default, which swallows the key when none match
 
+## Ignoring applications
+
+To have nothing run while some applications have focus, list them in a directive, after the other directives, instead
+of giving every binding an `Ignore` entry for them:
+
+```
+.shell pwsh
+.pause alt + p
+.ignore Google Chrome | Code
+```
+
+- The names are process names, like those of `app =`, and `|` separates them. They have to be the whole name, with the
+  same case
+- It covers keyboard bindings, mouse bindings and gestures. It is the same as `Ignore` for every binding: whkd runs
+  nothing, but it still consumes the key, as it does for any key that has a binding. For a key to reach an application,
+  pause whkd with the `.pause` hotkey
+- A binding for an application that is ignored never runs, and `whkd validate` warns about it
+
 ## Long commands
 
 A `\` at the end of a line, after a space, continues the command on the next line. The lines are joined with a single

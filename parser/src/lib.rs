@@ -36,6 +36,7 @@ use syntax::DIRECTIVES;
 use syntax::EQUALS;
 use syntax::GESTURE_COOLDOWN;
 use syntax::GROUP_OPEN;
+use syntax::IGNORE_APPS;
 use syntax::KEY_SEPARATOR;
 use syntax::LAYOUT;
 use syntax::NOT_EQUALS;
@@ -500,6 +501,17 @@ impl<'a> Cursor<'a> {
             None
         };
 
+        let ignore = if self.at_keyword(IGNORE_APPS) {
+            self.pos += IGNORE_APPS.len();
+            let values = self.parse_values().map_err(|error| {
+                error.with_help("list the process names, as in `.ignore Firefox | Google Chrome`")
+            })?;
+            self.skip_trivia();
+            values.into_iter().map(|(name, _)| name).collect()
+        } else {
+            vec![]
+        };
+
         let mut app_bindings = vec![];
         let mut bindings = vec![];
 
@@ -582,6 +594,7 @@ impl<'a> Cursor<'a> {
 
         let mut warnings = std::mem::take(&mut self.warnings);
         warnings.extend(lint(&self.entries));
+        warnings.extend(lint_ignored(&self.entries, &ignore));
         warnings.sort_by_key(|warning| warning.span.start);
 
         Ok(Parsed {
@@ -593,6 +606,7 @@ impl<'a> Cursor<'a> {
                 pause_hook,
                 wheel_cooldown,
                 gesture_cooldown,
+                ignore,
             },
             warnings,
         })
@@ -1011,10 +1025,7 @@ impl<'a> Cursor<'a> {
     }
 
     /// The entries of a block, for each of the keys that its hotkey stands for
-    fn parse_app_binding(
-        &mut self,
-        hotkey: &Hotkey,
-    ) -> Result<BlockBindings, ParseError> {
+    fn parse_app_binding(&mut self, hotkey: &Hotkey) -> Result<BlockBindings, ParseError> {
         let open = self.pos;
         self.pos += 1;
 
@@ -1499,6 +1510,39 @@ fn lint(entries: &[Entry]) -> Vec<ParseError> {
 }
 
 /// Whether `a` matches whenever `b` does
+/// A binding for an application that `.ignore` lists never runs
+fn lint_ignored(entries: &[Entry], ignore: &[String]) -> Vec<ParseError> {
+    let mut warnings = vec![];
+
+    for entry in entries {
+        let EntryKind::Conditional(Condition::Predicates(predicates)) = &entry.kind else {
+            continue;
+        };
+
+        let ignored = predicates.iter().find_map(|predicate| match predicate {
+            Predicate::App {
+                names,
+                negated: false,
+            } if names.iter().all(|name| ignore.contains(name)) => Some(names),
+            _ => None,
+        });
+
+        if let Some(names) = ignored {
+            warnings.push(
+                ParseError::new(
+                    format!("this never runs, `{}` is ignored", names.join(" | ")),
+                    entry.span.clone(),
+                    "no binding runs in an application that is in `.ignore`",
+                )
+                .with_severity(Severity::Warning)
+                .with_help("remove it from `.ignore`, or remove this entry"),
+            );
+        }
+    }
+
+    warnings
+}
+
 fn covers(a: &Condition, b: &Condition) -> bool {
     match (a, b) {
         (Condition::Predicates(a), Condition::Predicates(b)) => a
@@ -1593,6 +1637,7 @@ alt + h : echo "Hello""#;
             pause_hook: None,
             wheel_cooldown: None,
             gesture_cooldown: None,
+            ignore: vec![],
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -1619,6 +1664,7 @@ alt + h : echo "Hello""#;
             pause_hook: None,
             wheel_cooldown: None,
             gesture_cooldown: None,
+            ignore: vec![],
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -1702,6 +1748,7 @@ alt + 1 : komorebic focus-workspace 0 # digits are fine in the hotkeys section
             pause_hook: None,
             wheel_cooldown: None,
             gesture_cooldown: None,
+            ignore: vec![],
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -1728,6 +1775,7 @@ f11 : echo "hello f11""#;
             pause_hook: None,
             wheel_cooldown: None,
             gesture_cooldown: None,
+            ignore: vec![],
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -1784,6 +1832,7 @@ alt + h : echo "Hello""#;
             pause_hook: None,
             wheel_cooldown: None,
             gesture_cooldown: None,
+            ignore: vec![],
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -1814,6 +1863,7 @@ alt + h : echo "Hello""#;
             pause_hook: None,
             wheel_cooldown: None,
             gesture_cooldown: None,
+            ignore: vec![],
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -1845,6 +1895,7 @@ alt + h : echo "Hello""#;
             pause_hook: Some("komorebic toggle-pause".to_string()),
             wheel_cooldown: None,
             gesture_cooldown: None,
+            ignore: vec![],
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -1876,6 +1927,7 @@ alt + h : echo "Hello""#;
             pause_hook: Some("komorebic toggle-pause".to_string()),
             wheel_cooldown: None,
             gesture_cooldown: None,
+            ignore: vec![],
         };
 
         assert_eq!(output.unwrap(), expected);
@@ -3056,5 +3108,117 @@ alt + h + wheelup : x
             keys_and_commands(".shell cmd\nf{1,2} : echo é{ß,ü}\n"),
             ["f1 : echo éß", "f2 : echo éü"]
         );
+    }
+
+    #[test]
+    fn test_ignore_directive() {
+        let with = |directives: &str| parse(&format!(".shell cmd\n{directives}\nf1 : x\n"));
+
+        assert!(parse(".shell cmd\nf1 : x\n").unwrap().ignore.is_empty());
+        assert_eq!(with(".ignore Firefox").unwrap().ignore, ["Firefox"]);
+        assert_eq!(
+            with(".ignore Firefox | Google Chrome|  Zen Browser # note")
+                .unwrap()
+                .ignore,
+            ["Firefox", "Google Chrome", "Zen Browser"]
+        );
+        assert_eq!(
+            with(".ignore my-app.v2 | code_oss").unwrap().ignore,
+            ["my-app.v2", "code_oss"]
+        );
+
+        // after the other directives, which it does not need
+        let all = with(
+            ".pause alt + p\n.pause_hook echo x\n.wheel_cooldown 20\n.gesture_cooldown 30\n.ignore Code",
+        )
+        .unwrap();
+        assert_eq!(all.ignore, ["Code"]);
+        assert_eq!(all.gesture_cooldown, Some(30));
+        assert_eq!(with(".wheel_cooldown 20").unwrap().ignore.len(), 0);
+    }
+
+    #[test]
+    fn test_ignore_directive_goes_last() {
+        for src in [
+            ".shell cmd\n.ignore Code\n.gesture_cooldown 30\nf1 : x\n",
+            ".shell cmd\n.ignore Code\n.pause alt + p\nf1 : x\n",
+            ".shell cmd\nf1 : x\n.ignore Code\n",
+            ".shell cmd\n.ignore Code\n.ignore Firefox\nf1 : x\n",
+        ] {
+            let error = err(src);
+            assert!(
+                error.message.starts_with("expected a key name"),
+                "{src:?}: {}",
+                error.message
+            );
+            // and the order is spelt out
+            assert!(error.help.unwrap().contains("`.ignore`"), "{src:?}");
+        }
+    }
+
+    #[test]
+    fn test_ignore_directive_needs_an_application() {
+        for src in [
+            ".shell cmd\n.ignore\nf1 : x\n",
+            ".shell cmd\n.ignore # none\nf1 : x\n",
+            ".shell cmd\n.ignore Code |\nf1 : x\n",
+        ] {
+            let error = err(src);
+            assert!(
+                error.message.starts_with("expected a value"),
+                "{src:?}: {}",
+                error.message
+            );
+            assert!(
+                error
+                    .help
+                    .as_deref()
+                    .unwrap()
+                    .contains(".ignore Firefox | Google Chrome"),
+                "{src:?}"
+            );
+        }
+    }
+
+    /// What is said about entries that never run, and nothing else
+    fn never_runs(src: &str) -> Vec<ParseError> {
+        warnings(src)
+            .into_iter()
+            .filter(|warning| warning.message.starts_with("this never runs"))
+            .collect()
+    }
+
+    #[test]
+    fn test_ignored_applications_do_not_have_bindings_that_run() {
+        let src = ".shell cmd\n.ignore Firefox | Code\nf1 [\n  Firefox : a\n  Notepad : b\n  Default : c\n]\nf2 when app = Code : d\nf3 [\n  app = Firefox | Notepad : e\n  app = Code & layout = bsp : f\n  app != Firefox : g\n  Ignore Me : h\n]\n";
+        let found = never_runs(src);
+
+        // the entries that are only for ignored applications, and not those that are for one as well
+        let flagged: Vec<&str> = found.iter().map(|w| &src[w.span.clone()]).collect();
+        assert_eq!(
+            flagged,
+            ["Firefox", "f2", "app = Code & layout = bsp"],
+            "{found:?}"
+        );
+        assert_eq!(found[0].message, "this never runs, `Firefox` is ignored");
+        assert_eq!(found[0].severity, Severity::Warning);
+        assert_eq!(
+            found[0].help.as_deref(),
+            Some("remove it from `.ignore`, or remove this entry")
+        );
+    }
+
+    #[test]
+    fn test_nothing_is_flagged_without_an_ignored_application() {
+        let src = ".shell cmd\n.ignore Code\nf1 [\n  Firefox : a\n  Default : b\n]\nf2 : c\nf3 when app != Code : d\n";
+        assert!(never_runs(src).is_empty());
+
+        // an application that is not in the list is not ignored for being a part of one
+        let src = ".shell cmd\n.ignore Fire\nf1 [\n  Firefox : a\n]\n";
+        assert!(never_runs(src).is_empty());
+
+        // and without the directive there is nothing to be ignored
+        let src = ".shell cmd\nf1 [\n  Firefox : a\n]\n";
+        assert!(never_runs(src).is_empty());
     }
 }

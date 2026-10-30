@@ -14,6 +14,14 @@ pub struct Whkdrc {
     /// How long, in milliseconds, after a swipe with a direction another one is not told, if the
     /// whkdrc says so. Otherwise it is [`DEFAULT_GESTURE_COOLDOWN_MS`]
     pub gesture_cooldown: Option<u32>,
+    /// The applications, by process name, that no binding runs a command in
+    pub ignore: Vec<String>,
+}
+
+/// Whether the application with the focused window is one that the whkdrc says to leave alone
+#[must_use]
+pub fn is_ignored(ignore: &[String], app: &str) -> bool {
+    ignore.iter().any(|name| name == app)
 }
 
 /// A trackpad keeps scrolling for a moment after the fingers lift, so without a pause between
@@ -715,5 +723,18 @@ mod tests {
             select(without_default.iter().map(|(c, v)| (*c, *v)), &state),
             Some("plain")
         );
+    }
+
+    #[test]
+    fn an_application_is_ignored_by_its_exact_name() {
+        let ignore = vec![String::from("Firefox"), String::from("Google Chrome")];
+
+        assert!(is_ignored(&ignore, "Firefox"));
+        assert!(is_ignored(&ignore, "Google Chrome"));
+        // as for the conditions of a binding, the name is what is shown by `Get-Process`
+        assert!(!is_ignored(&ignore, "firefox"));
+        assert!(!is_ignored(&ignore, "Google"));
+        assert!(!is_ignored(&ignore, ""));
+        assert!(!is_ignored(&[], "Firefox"));
     }
 }
