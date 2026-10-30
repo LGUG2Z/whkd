@@ -116,6 +116,34 @@ alt + n [
 - A `\` that continues onto a blank line, a comment or the end of the file does nothing, and `whkd validate` says so
 - `whkd fmt` leaves the line breaks where they are and indents the lines that continue
 
+## Brace expansion
+
+A `{...}` group in a hotkey and in its command stands for several bindings, one for each element, so that bindings that
+differ in a key and a word do not have to be written out:
+
+```
+alt + {h,j,k,l} : komorebic focus {left,down,up,right}
+alt + {1-9}     : komorebic focus-workspace {0-8}
+```
+
+is the same as the four lines for `alt + h` to `alt + l`, and the nine for `alt + 1` to `alt + 9`, that you would write
+without it.
+
+- The first group of the hotkey goes with the first group of the command, the second with the second, and so on, so they
+  have to have the same number of elements. A command may have fewer groups than the hotkey, and then the groups it does
+  not have only add bindings, with the same command, such as `{alt,ctrl} + h : echo hello`
+- Whitespace around an element does not count. `{1-9}` and `{a-f}` are ranges of digits or letters (of one case), and
+  can be mixed with other elements, as in `{0,2-4,x}`
+- `_` is an element that is nothing, which is how a binding can have a modifier on one line and not on the other:
+  `alt + {_,shift +} {h,l} : komorebic {focus,move} {left,right}` is four bindings. Text next to a group is part of the
+  key, so `f{1-3}` is `f1`, `f2` and `f3`
+- What comes out is read like a hotkey that was written out, so a key that does not exist, or a mouse input with a key
+  held that is not a modifier, is reported at the element it came from, with the key it stands for
+- The command of a hotkey without groups is not looked at, so `{` in it is what it always was. In one that has groups, write
+  `\{` and `\}` for braces that are part of the command, as in `% \{ $_.Name \}`
+- Groups can be used in `when` guards and `[ ... ]` blocks, whose entries are expanded in the same way. A hotkey can stand
+  for at most 512 bindings
+
 ## Formatting
 
 `whkd fmt` formats a configuration file, using the same lookup as `whkd validate` (the default location, the global

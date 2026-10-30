@@ -19,6 +19,7 @@ use whkd_core::Shell;
 use whkd_core::Whkdrc;
 use whkd_core::MAX_COOLDOWN_MS;
 
+mod braces;
 pub mod syntax;
 
 use syntax::is_ident_continue;
@@ -34,6 +35,7 @@ use syntax::DELIMITER;
 use syntax::DIRECTIVES;
 use syntax::EQUALS;
 use syntax::GESTURE_COOLDOWN;
+use syntax::GROUP_OPEN;
 use syntax::KEY_SEPARATOR;
 use syntax::LAYOUT;
 use syntax::NOT_EQUALS;
@@ -502,24 +504,25 @@ impl<'a> Cursor<'a> {
         let mut bindings = vec![];
 
         while self.peek().is_some() {
-            let start = self.pos;
-            let keys = self.parse_hotkeys(true)?;
-            let keys_span = start..self.trimmed_end();
+            let hotkey = self.parse_hotkey(true)?;
+            let keys_span = hotkey.span.clone();
             self.skip_inline();
 
             if self.peek() == Some(BLOCK_OPEN) {
-                let mapped = self.parse_app_binding(&keys)?;
-                app_bindings.push((keys, mapped));
+                app_bindings.extend(self.parse_app_binding(&hotkey)?);
             } else if self.peek() == Some(DELIMITER) {
                 self.pos += 1;
-                let command = self.parse_command();
-                self.entries
-                    .push(Entry::new(&keys, keys_span, EntryKind::Plain));
-                bindings.push(HotkeyBinding {
-                    keys,
-                    command,
-                    condition: Condition::Always,
-                });
+                let commands = self.parse_commands(&hotkey)?;
+
+                for (keys, command) in hotkey.expansions.iter().zip(commands) {
+                    self.entries
+                        .push(Entry::new(keys, keys_span.clone(), EntryKind::Plain));
+                    bindings.push(HotkeyBinding {
+                        keys: keys.clone(),
+                        command,
+                        condition: Condition::Always,
+                    });
+                }
             } else if self.at_keyword(WHEN) {
                 self.pos += WHEN.len();
                 self.skip_inline();
@@ -537,21 +540,23 @@ impl<'a> Cursor<'a> {
 
                 self.skip_inline();
                 self.expect(DELIMITER)?;
-                let command = self.parse_command();
+                let commands = self.parse_commands(&hotkey)?;
 
-                self.entries.push(Entry::new(
-                    &keys,
-                    keys_span,
-                    EntryKind::Conditional(condition.clone()),
-                ));
-                app_bindings.push((
-                    keys.clone(),
-                    vec![HotkeyBinding {
+                for (keys, command) in hotkey.expansions.iter().zip(commands) {
+                    self.entries.push(Entry::new(
                         keys,
-                        command,
-                        condition,
-                    }],
-                ));
+                        keys_span.clone(),
+                        EntryKind::Conditional(condition.clone()),
+                    ));
+                    app_bindings.push((
+                        keys.clone(),
+                        vec![HotkeyBinding {
+                            keys: keys.clone(),
+                            command,
+                            condition: condition.clone(),
+                        }],
+                    ));
+                }
             } else {
                 return Err(ParseError::new(
                     format!(
@@ -670,6 +675,190 @@ impl<'a> Cursor<'a> {
                 ))
             }
         }
+    }
+
+    /// The hotkey of a binding: keys, or if it has `{...}` groups, all the keys they stand for
+    fn parse_hotkey(&mut self, allow_mouse: bool) -> Result<Hotkey, ParseError> {
+        let start = self.pos;
+
+        if !self.hotkey_has_groups() {
+            let keys = self.parse_hotkeys(allow_mouse)?;
+            return Ok(Hotkey {
+                expansions: vec![keys],
+                groups: vec![],
+                span: start..self.trimmed_end(),
+            });
+        }
+
+        let mut pieces = vec![];
+
+        loop {
+            let text_start = self.pos;
+            let run = self
+                .take_while(|c| !matches!(c, GROUP_OPEN | DELIMITER | BLOCK_OPEN | COMMENT | '\n'));
+
+            // `when` ends the hotkey, unless it is a key, which is what it is after a `+`
+            let (text, guarded) = match guard_start(run) {
+                Some(at) => {
+                    self.pos = text_start + at;
+                    (&run[..at], true)
+                }
+                None => (run, false),
+            };
+
+            if !text.is_empty() {
+                pieces.push(braces::Piece::Text {
+                    text: text.to_string(),
+                    start: text_start,
+                });
+            }
+
+            if guarded || self.peek() != Some(GROUP_OPEN) {
+                break;
+            }
+
+            let open = self.pos;
+            let (length, elements) =
+                braces::scan_group(self.rest()).map_err(|error| group_error(&error, open))?;
+
+            pieces.push(braces::Piece::Group(braces::Group {
+                span: open..open + length,
+                elements: elements
+                    .into_iter()
+                    .map(|element| braces::Element {
+                        text: element.text,
+                        span: open + element.span.start..open + element.span.end,
+                    })
+                    .collect(),
+            }));
+            self.pos += length;
+        }
+
+        let span = start..self.trimmed_end();
+        let groups: Vec<braces::Group> = pieces
+            .iter()
+            .filter_map(|piece| match piece {
+                braces::Piece::Group(group) => Some(group.clone()),
+                braces::Piece::Text { .. } => None,
+            })
+            .collect();
+
+        let lengths: Vec<usize> = groups.iter().map(|group| group.elements.len()).collect();
+        let count = braces::expansions(&lengths).unwrap_or(usize::MAX);
+        if count > braces::MAX_EXPANSIONS {
+            return Err(ParseError::new(
+                format!(
+                    "this hotkey stands for more than {} bindings",
+                    braces::MAX_EXPANSIONS
+                ),
+                span,
+                if count == usize::MAX {
+                    String::from("far too many")
+                } else {
+                    format!("{count} bindings")
+                },
+            )
+            .with_help("use fewer groups, or fewer elements in them"));
+        }
+
+        let mut expansions = vec![];
+        for choice in braces::choices(&lengths) {
+            let expanded = braces::expand_hotkey(&pieces, &choice);
+            expansions.push(self.parse_expanded_hotkey(&expanded, &span, allow_mouse)?);
+        }
+
+        Ok(Hotkey {
+            expansions,
+            groups,
+            span,
+        })
+    }
+
+    /// Whether the hotkey that starts here has a group in it: a `{` before the end of what is
+    /// before the command
+    fn hotkey_has_groups(&self) -> bool {
+        self.rest()
+            .chars()
+            .take_while(|&c| !matches!(c, DELIMITER | BLOCK_OPEN | COMMENT | '\n'))
+            .any(|c| c == GROUP_OPEN)
+    }
+
+    /// The keys of a hotkey that groups have been expanded in. They are read as keys written out in
+    /// full are, and a mistake in them is where the text it came from is
+    fn parse_expanded_hotkey(
+        &self,
+        expanded: &braces::Expanded,
+        whole: &Range<usize>,
+        allow_mouse: bool,
+    ) -> Result<Vec<String>, ParseError> {
+        let mut cursor = Cursor {
+            src: &expanded.text,
+            pos: 0,
+            keys: self.keys,
+            entries: vec![],
+            warnings: vec![],
+        };
+
+        let result = cursor.parse_hotkeys(allow_mouse).and_then(|keys| {
+            cursor.skip_inline();
+            match cursor.peek() {
+                None => Ok(keys),
+                Some(_) => Err(ParseError::new(
+                    format!("expected `+` between keys, found {}", cursor.found()),
+                    cursor.here(),
+                    "expected `+` here",
+                )),
+            }
+        });
+
+        result.map_err(|mut error| {
+            error.span = expanded.locate(&error.span, whole);
+            for (span, _) in &mut error.notes {
+                *span = expanded.locate(span, whole);
+            }
+
+            error.with_note(
+                whole.clone(),
+                format!("when this stands for `{}`", expanded.text.trim()),
+            )
+        })
+    }
+
+    /// The command of a binding with `hotkey`, one for each of the keys the hotkey stands for
+    fn parse_commands(&mut self, hotkey: &Hotkey) -> Result<Vec<String>, ParseError> {
+        self.skip_inline();
+        let start = self.pos;
+        let command = self.parse_command();
+        let span = start..self.trimmed_end().max(start);
+
+        if hotkey.groups.is_empty() {
+            return Ok(vec![command]);
+        }
+
+        let lengths: Vec<usize> = hotkey
+            .groups
+            .iter()
+            .map(|group| group.elements.len())
+            .collect();
+
+        braces::expand_command(&command, &hotkey.groups, &braces::choices(&lengths)).map_err(
+            |error| {
+                // a command that is a line of the file is where it is. One that was joined from
+                // several lines is only known as a whole
+                let at = if span.len() == command.len() {
+                    span.start + error.span.start..span.start + error.span.end
+                } else {
+                    span
+                };
+
+                let mut report = ParseError::new(error.message, at, error.label);
+                report.help = error.help;
+                if let Some((index, label)) = error.hotkey_group {
+                    report = report.with_note(hotkey.groups[index].span.clone(), label);
+                }
+                report
+            },
+        )
     }
 
     /// The keys of a hotkey. Mouse inputs are allowed where `allow_mouse` is, which is wherever the
@@ -821,11 +1010,15 @@ impl<'a> Cursor<'a> {
         command
     }
 
-    fn parse_app_binding(&mut self, keys: &[String]) -> Result<Vec<HotkeyBinding>, ParseError> {
+    /// The entries of a block, for each of the keys that its hotkey stands for
+    fn parse_app_binding(
+        &mut self,
+        hotkey: &Hotkey,
+    ) -> Result<BlockBindings, ParseError> {
         let open = self.pos;
         self.pos += 1;
 
-        let mut mapped = vec![];
+        let mut mapped: Vec<Vec<HotkeyBinding>> = vec![vec![]; hotkey.expansions.len()];
 
         loop {
             self.skip_trivia();
@@ -850,22 +1043,28 @@ impl<'a> Cursor<'a> {
             self.expect(DELIMITER).map_err(|error| {
                 error.with_note(open..open + 1, "inside this `[` block; is a `]` missing?")
             })?;
-            let command = self.parse_command();
+            let commands = self.parse_commands(hotkey)?;
 
             let kind = match &condition {
                 Condition::Default => EntryKind::Default,
                 condition => EntryKind::Conditional(condition.clone()),
             };
-            self.entries.push(Entry::new(keys, condition_span, kind));
 
-            mapped.push(HotkeyBinding {
-                keys: keys.to_vec(),
-                command,
-                condition,
-            });
+            for ((keys, command), entries) in
+                hotkey.expansions.iter().zip(commands).zip(&mut mapped)
+            {
+                self.entries
+                    .push(Entry::new(keys, condition_span.clone(), kind.clone()));
+
+                entries.push(HotkeyBinding {
+                    keys: keys.clone(),
+                    command,
+                    condition: condition.clone(),
+                });
+            }
         }
 
-        if mapped.is_empty() {
+        if mapped[0].is_empty() {
             return Err(ParseError::new(
                 "empty app binding",
                 open..self.pos,
@@ -873,7 +1072,7 @@ impl<'a> Cursor<'a> {
             ));
         }
 
-        Ok(mapped)
+        Ok(hotkey.expansions.iter().cloned().zip(mapped).collect())
     }
 
     /// `Default`, or one or more terms joined by `&`
@@ -1028,6 +1227,57 @@ pub(crate) fn continuation(line: &str) -> Option<&str> {
     (text.is_empty() || text.ends_with([' ', '\t'])).then(|| text.trim_end())
 }
 
+/// The entries of the blocks of a whkdrc, with the keys that each is for
+type BlockBindings = Vec<(Vec<String>, Vec<HotkeyBinding>)>;
+
+/// What the hotkey of a binding stands for: one set of keys, or if it has `{...}` groups, one for
+/// each way of choosing from them
+struct Hotkey {
+    expansions: Vec<Vec<String>>,
+    /// The groups, which the command of the binding may have a group for each of
+    groups: Vec<braces::Group>,
+    span: Range<usize>,
+}
+
+/// Where in `text`, the text between the groups of a hotkey, the `when` that guards it starts. A
+/// `when` after a `+` is a key
+fn guard_start(text: &str) -> Option<usize> {
+    words(text).find_map(|(at, word)| {
+        let before = text[..at].trim_end().chars().next_back();
+        (word == WHEN && at > 0 && before != Some('+')).then_some(at)
+    })
+}
+
+/// The words of `text` and where they start
+fn words(text: &str) -> impl Iterator<Item = (usize, &str)> {
+    let mut at = 0;
+    std::iter::from_fn(move || {
+        let rest = &text[at..];
+        let skipped = rest.len()
+            - rest
+                .trim_start_matches(|c: char| !is_ident_continue(c))
+                .len();
+        let start = at + skipped;
+        let word = text[start..]
+            .split(|c: char| !is_ident_continue(c))
+            .next()
+            .filter(|word| !word.is_empty())?;
+        at = start + word.len();
+        Some((start, word))
+    })
+}
+
+/// A mistake in a group, as the error to report, for a group that starts at `open` in the file
+fn group_error(error: &braces::GroupError, open: usize) -> ParseError {
+    let mut report = ParseError::new(
+        error.message.clone(),
+        error.span.start + open..error.span.end + open,
+        error.label.clone(),
+    );
+    report.help = error.help.clone();
+    report
+}
+
 enum Term {
     Default,
     Predicate(Predicate),
@@ -1121,6 +1371,7 @@ fn check_mouse_inputs(
     Ok(())
 }
 
+#[derive(Clone)]
 enum EntryKind {
     /// A plain `keys : command` binding
     Plain,
@@ -2426,6 +2677,384 @@ alt + h + wheelup : x
             error.report("whkdrc", src, false).contains("whkdrc:4:4"),
             "{}",
             error.report("whkdrc", src, false)
+        );
+    }
+
+    fn bindings(src: &str) -> Vec<(Vec<String>, String)> {
+        let parsed = parse(src).unwrap();
+        parsed
+            .app_bindings
+            .iter()
+            .flat_map(|(_, bindings)| bindings)
+            .chain(&parsed.bindings)
+            .map(|binding| (binding.keys.clone(), binding.command.clone()))
+            .collect()
+    }
+
+    fn keys_and_commands(src: &str) -> Vec<String> {
+        bindings(src)
+            .into_iter()
+            .map(|(keys, command)| format!("{} : {command}", keys.join(" + ")))
+            .collect()
+    }
+
+    #[test]
+    fn test_braces_make_a_binding_for_each_element() {
+        assert_eq!(
+            keys_and_commands(
+                ".shell cmd\nalt + {h,j,k,l} : komorebic focus {left,down,up,right}\n"
+            ),
+            [
+                "alt + h : komorebic focus left",
+                "alt + j : komorebic focus down",
+                "alt + k : komorebic focus up",
+                "alt + l : komorebic focus right",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_an_underscore_leaves_a_key_out_and_the_first_group_changes_the_slowest() {
+        assert_eq!(
+            keys_and_commands(
+                ".shell cmd\nalt + {_,shift +} {h,j} : komorebic {focus,move} {left,down}\n"
+            ),
+            [
+                "alt + h : komorebic focus left",
+                "alt + j : komorebic focus down",
+                "alt + shift + h : komorebic move left",
+                "alt + shift + j : komorebic move down",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_ranges() {
+        assert_eq!(
+            keys_and_commands(".shell cmd\nalt + {1-3} : focus-workspace {0-2}\n"),
+            [
+                "alt + 1 : focus-workspace 0",
+                "alt + 2 : focus-workspace 1",
+                "alt + 3 : focus-workspace 2",
+            ]
+        );
+
+        assert_eq!(
+            keys_and_commands(".shell cmd\nalt + {a-c,x} : {a-c,x}\n").len(),
+            4
+        );
+    }
+
+    #[test]
+    fn test_a_group_can_be_the_whole_hotkey_or_all_but_a_modifier() {
+        assert_eq!(
+            keys_and_commands(".shell cmd\n{f1,f2} : echo {one,two}\n"),
+            ["f1 : echo one", "f2 : echo two"]
+        );
+        assert_eq!(
+            keys_and_commands(".shell cmd\n{alt,ctrl} + h : echo\n"),
+            ["alt + h : echo", "ctrl + h : echo"]
+        );
+        assert_eq!(
+            keys_and_commands(".shell cmd\n{ alt , ctrl + shift }+h : x\n"),
+            ["alt + h : x", "ctrl + shift + h : x"]
+        );
+    }
+
+    #[test]
+    fn test_a_command_may_have_fewer_groups_than_the_hotkey_or_none() {
+        assert_eq!(
+            keys_and_commands(".shell cmd\n{alt,ctrl} + {h,j} : echo {1,2}\n"),
+            [
+                "alt + h : echo 1",
+                "alt + j : echo 1",
+                "ctrl + h : echo 2",
+                "ctrl + j : echo 2",
+            ]
+        );
+        assert_eq!(
+            keys_and_commands(".shell cmd\nalt + {h,j} : echo same\n"),
+            ["alt + h : echo same", "alt + j : echo same"]
+        );
+    }
+
+    #[test]
+    fn test_braces_in_the_command_of_a_hotkey_without_groups_are_untouched() {
+        // a script block is a command like any other, and always was
+        let src = ".shell pwsh\nalt + h : Get-Process | ForEach-Object { $_.Name } {a,b}\n";
+        assert_eq!(
+            keys_and_commands(src),
+            ["alt + h : Get-Process | ForEach-Object { $_.Name } {a,b}"]
+        );
+        assert!(warnings(src).is_empty());
+    }
+
+    #[test]
+    fn test_a_backslash_makes_a_brace_part_of_the_command() {
+        assert_eq!(
+            keys_and_commands(".shell pwsh\nalt + {h,j} : Get-Process | % \\{ $_.Name \\} {a,b}\n"),
+            [
+                "alt + h : Get-Process | % { $_.Name } a",
+                "alt + j : Get-Process | % { $_.Name } b",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_guards_and_blocks_are_expanded_too() {
+        let parsed = parse(
+            ".shell cmd\nalt + {h,j} when layout = bsp : echo {a,b}\nalt + {k,l} [\n  Firefox : echo {c,d}\n  Default : echo {e,f}\n]\nalt + m : plain\n",
+        )
+        .unwrap();
+
+        assert_eq!(parsed.bindings.len(), 1);
+
+        let described: Vec<(String, Vec<(String, Condition)>)> = parsed
+            .app_bindings
+            .iter()
+            .map(|(keys, bindings)| {
+                (
+                    keys.join(" + "),
+                    bindings
+                        .iter()
+                        .map(|binding| (binding.command.clone(), binding.condition.clone()))
+                        .collect(),
+                )
+            })
+            .collect();
+
+        let bsp = Condition::Predicates(vec![Predicate::Layout {
+            layouts: vec![Layout::Bsp],
+            negated: false,
+        }]);
+        let firefox = Condition::Predicates(vec![Predicate::App {
+            names: vec![String::from("Firefox")],
+            negated: false,
+        }]);
+
+        assert_eq!(
+            described,
+            vec![
+                (
+                    String::from("alt + h"),
+                    vec![(String::from("echo a"), bsp.clone())]
+                ),
+                (String::from("alt + j"), vec![(String::from("echo b"), bsp)]),
+                (
+                    String::from("alt + k"),
+                    vec![
+                        (String::from("echo c"), firefox.clone()),
+                        (String::from("echo e"), Condition::Default),
+                    ]
+                ),
+                (
+                    String::from("alt + l"),
+                    vec![
+                        (String::from("echo d"), firefox),
+                        (String::from("echo f"), Condition::Default),
+                    ]
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_a_key_group_before_a_guard_is_not_confused_with_it() {
+        let parsed = parse(".shell cmd\n{a,b} when Firefox : x\n").unwrap();
+        assert_eq!(parsed.app_bindings.len(), 2);
+
+        // a key named `when` is a key, after a `+`
+        let parsed = parse(".shell cmd\n{a,b} + when : x\n").unwrap();
+        assert_eq!(parsed.bindings[1].keys, ["b", "when"]);
+    }
+
+    #[test]
+    fn test_a_continued_command_is_expanded_as_a_whole() {
+        assert_eq!(
+            keys_and_commands(".shell cmd\n{alt,ctrl} + {h,j} : echo {a,b} \\\n    {c,d}\n"),
+            [
+                "alt + h : echo a c",
+                "alt + j : echo a d",
+                "ctrl + h : echo b c",
+                "ctrl + j : echo b d",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_an_empty_command_is_flagged_once() {
+        let src = ".shell cmd\nalt + {h,j} :\nf1 : x\n";
+        assert_eq!(bindings(src).len(), 3);
+        assert_eq!(messages(src), ["empty command"]);
+    }
+
+    #[test]
+    fn test_mouse_inputs_and_gestures_can_be_elements() {
+        let parsed = parse(
+            ".shell cmd\nalt + {wheelup,wheeldown} : echo {up,down}\n{swipe3left,swipe3right} : x\n",
+        )
+        .unwrap();
+        assert_eq!(parsed.bindings.len(), 4);
+        assert_eq!(parsed.bindings[1].keys, ["alt", "wheeldown"]);
+    }
+
+    #[test]
+    fn test_a_binding_is_a_duplicate_if_an_expansion_is() {
+        let src = ".shell cmd\nalt + h : first\nalt + {h,j} : second\n";
+        let found = warnings(src);
+        assert_eq!(found.len(), 1, "{found:?}");
+        // reported where the hotkey is written
+        assert_eq!(&src[found[0].span.clone()], "alt + {h,j}");
+    }
+
+    #[test]
+    fn test_directives_keep_their_own_syntax() {
+        let error = err(".shell cmd\n.pause {a,b}\nf1 : x\n");
+        assert!(
+            error.message.contains("expected a key name"),
+            "{}",
+            error.message
+        );
+    }
+
+    #[test]
+    fn test_errors_after_a_binding_with_groups_are_on_the_right_line() {
+        let src = ".shell cmd\nalt + {h,j} : x {a,b}\nf2 nonsense\n";
+        let error = err(src);
+        assert!(
+            error.report("whkdrc", src, false).contains("whkdrc:3:4"),
+            "{}",
+            error.report("whkdrc", src, false)
+        );
+    }
+
+    fn group_error(src: &str) -> ParseError {
+        err(&format!(".shell cmd\n{src}\n"))
+    }
+
+    #[test]
+    fn test_mistakes_in_a_group_are_where_it_is() {
+        let src = ".shell cmd\nalt + {h,j,k : x\n";
+        let error = group_error("alt + {h,j,k : x");
+        assert_eq!(error.message, "unterminated `{`");
+        assert_eq!(&src[error.span.clone()], "{");
+
+        let src = ".shell cmd\nalt + {h,{j,k}} : x\n";
+        let error = group_error("alt + {h,{j,k}} : x");
+        assert_eq!(error.message, "groups cannot be nested");
+        assert_eq!(&src[error.span.clone()], "{");
+        assert_eq!(error.span.start, src.find("{j").unwrap());
+
+        let src = ".shell cmd\nalt + {h,,k} : x\n";
+        let error = group_error("alt + {h,,k} : x");
+        assert_eq!(error.message, "empty element");
+        assert_eq!(
+            error.help.as_deref(),
+            Some("write `_` for an element that is nothing")
+        );
+        assert_eq!(error.span.start, src.find(",,").unwrap() + 1);
+
+        let src = ".shell cmd\nalt + {9-1} : x\n";
+        let error = group_error("alt + {9-1} : x");
+        assert_eq!(error.message, "invalid range `9-1`");
+        assert_eq!(&src[error.span.clone()], "9-1");
+    }
+
+    #[test]
+    fn test_too_many_bindings_are_refused() {
+        let error = group_error("alt + {1-9}{1-9}{a-z}{a-z} : x");
+        assert!(error.message.contains("more than 512"), "{}", error.message);
+        assert_eq!(error.label, "54756 bindings");
+
+        let src = format!(".shell cmd\nalt + {} : x\n", "{a-z}".repeat(40));
+        assert_eq!(err(&src).label, "far too many");
+    }
+
+    #[test]
+    fn test_a_command_group_of_another_length_is_a_mistake_with_a_note() {
+        let src = ".shell cmd\nalt + {h,j} : echo {a,b,c}\n";
+        let error = err(src);
+        assert_eq!(
+            error.message,
+            "this group has 3 elements, but the group of the hotkey it goes with has 2"
+        );
+        assert_eq!(&src[error.span.clone()], "{a,b,c}");
+        assert_eq!(error.notes.len(), 1);
+        assert_eq!(&src[error.notes[0].0.clone()], "{h,j}");
+    }
+
+    #[test]
+    fn test_a_mistake_in_a_continued_command_is_found_as_a_whole() {
+        // the lines were joined, so where in them it is, is not where it is in the file
+        let src = ".shell cmd\nalt + {h,j} : echo \\\n    {a,b,c}\n";
+        let error = err(src);
+        assert!(error.message.contains("3 elements"), "{}", error.message);
+        assert!(
+            src[error.span.clone()].starts_with("echo"),
+            "{:?}",
+            &src[error.span.clone()]
+        );
+    }
+
+    #[test]
+    fn test_a_command_with_more_groups_than_the_hotkey_is_a_mistake() {
+        let error = err(".shell cmd\nalt + {h,j} : echo {a,b} {c,d}\n");
+        assert_eq!(
+            error.message,
+            "this command has 2 groups, and the hotkey has 1"
+        );
+        assert!(error.help.unwrap().contains(r"\{"));
+    }
+
+    #[test]
+    fn test_a_mistake_in_a_block_command_is_found() {
+        let error = err(".shell cmd\nalt + {h,j} [\n  Firefox : echo {a}\n]\n");
+        assert!(error.message.contains("1 elements"), "{}", error.message);
+    }
+
+    #[test]
+    fn test_an_unknown_key_in_a_group_points_at_the_element() {
+        let src = ".shell cmd\nalt + {h,jj,k} : x\n";
+        let error = parse_with(src, &validator()).unwrap_err();
+        assert_eq!(error.message, "unknown key `jj`");
+        assert_eq!(&src[error.span.clone()], "jj");
+        // with what it stands for, and the suggestion for the key
+        assert_eq!(error.notes.len(), 1);
+        assert_eq!(&src[error.notes[0].0.clone()], "alt + {h,jj,k}");
+        assert_eq!(error.notes[0].1, "when this stands for `alt + jj`");
+
+        let src = ".shell cmd\nalt + {h,spac} : x\n";
+        let error = parse_with(src, &validator()).unwrap_err();
+        assert_eq!(error.message, "unknown key `spac`");
+        assert_eq!(error.help.as_deref(), Some("did you mean `space`?"));
+    }
+
+    #[test]
+    fn test_a_mistake_in_the_text_around_a_group_is_found_there() {
+        let src = ".shell cmd\nalt + hh{a,b} : x\n";
+        let error = parse_with(src, &validator()).unwrap_err();
+        assert_eq!(error.message, "unknown key `hha`");
+
+        let src = ".shell cmd\nalt + {a,b}wheelup : x\n";
+        assert!(parse_with(src, &validator()).is_err());
+    }
+
+    #[test]
+    fn test_keys_that_are_not_joined_are_a_mistake() {
+        let src = ".shell cmd\nalt {h,j} : x\n";
+        let error = err(src);
+        assert_eq!(error.message, "expected `+` between keys, found `h`");
+
+        // the mistake is that there is no `+`, even where the group has the key
+        let error = err(".shell cmd\nalt + {_,shift} h : x\n");
+        assert_eq!(error.message, "expected `+` between keys, found `h`");
+    }
+
+    #[test]
+    fn test_unicode_in_groups_and_commands() {
+        assert_eq!(
+            keys_and_commands(".shell cmd\nf{1,2} : echo é{ß,ü}\n"),
+            ["f1 : echo éß", "f2 : echo éü"]
         );
     }
 }

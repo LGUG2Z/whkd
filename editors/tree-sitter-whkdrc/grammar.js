@@ -76,8 +76,32 @@ module.exports = grammar({
     // a bare process name, which may be spelt like a predicate when nothing follows it
     process_name: ($) => choice($._process_name, 'app', 'layout'),
 
-    hotkeys: ($) => seq($.key, repeat(seq('+', $.key))),
+    // keys joined by `+`. A group, `{a,b}`, may also be next to a key or another group without one:
+    // what it stands for has the `+` in it (`{_,shift +} {h,j}`)
+    hotkeys: ($) =>
+      seq($._hotkey_part, repeat(seq('+', $._hotkey_part))),
+    // text can be next to a group, as `x{1,2}` and `{a,b}4up` are, and is a key once it has been
+    // expanded
+    _hotkey_part: ($) =>
+      choice(
+        $.key,
+        seq(
+          optional($.key),
+          repeat1(seq($.group, optional(alias($._word, $.key)))),
+        ),
+      ),
+    _word: (_) => /[\p{L}\p{N}_]+/,
     key: (_) => token(choice(/[\p{L}_][\p{L}\p{N}_]*/, /[0-9]+/)),
+
+    // `{a,b}`, `{_,shift +}` and `{1-9}`: what is in it is for the parser to read
+    group: ($) =>
+      seq(
+        '{',
+        optional($.group_element),
+        repeat(seq(',', optional($.group_element))),
+        '}',
+      ),
+    group_element: (_) => /[^{},\r\n]+/,
 
     // the rest of the line, up to a comment. A `\` that ends a line, after a space (or at the start
     // of the command), goes on to the next

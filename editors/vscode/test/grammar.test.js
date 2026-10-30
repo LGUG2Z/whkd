@@ -362,6 +362,50 @@ test('a command goes on to the next line with a trailing backslash', async () =>
   assertScope(lineWith(lines, 'alt + w when'), 'w', 'constant.character.key');
 });
 
+test('groups in a hotkey are highlighted, with keys inside them', async () => {
+  const lines = await fixture('braces.whkdrc');
+
+  const focus = lineWith(lines, 'ctrl + {h,j,k,l}');
+  assertScope(focus, 'ctrl', 'keyword.other.modifier');
+  assertScope(focus, '{', 'punctuation.definition.group');
+  assertScope(focus, '}', 'punctuation.definition.group');
+  assertScope(focus, ',', 'punctuation.separator.group');
+  assertScope(focus, 'h', 'constant.character.key');
+  assertScope(focus, 'h', 'meta.brace.expansion');
+  assertScope(focus, ':', 'punctuation.separator.delimiter');
+  assertContains(focus, 'komorebic', 'meta.embedded.line.powershell');
+
+  // `_` is nothing, and the elements can be modifiers and the `+` between them
+  const both = lineWith(lines, '{_,shift +}');
+  assertScope(both, '_', 'constant.language.empty');
+  assertScope(both, 'shift', 'keyword.other.modifier');
+  assertScope(both, '+', 'keyword.operator.key-separator', 0);
+  assertScope(both, 'alt', 'keyword.other.modifier');
+  assertNotScope(both, 'alt', 'meta.brace.expansion');
+
+  // a range is a range
+  assertScope(lineWith(lines, '{1-9}'), '1-9', 'constant.other.range');
+
+  // a group can be the modifiers, and mouse inputs are keys like any other
+  const wheel = lineWith(lines, '{wheelup,wheeldown}');
+  assertScope(wheel, 'alt', 'keyword.other.modifier');
+  assertScope(wheel, 'wheelup', 'constant.character.key.mouse');
+
+  // and guards and blocks come after them as always
+  const guarded = lineWith(lines, 'alt + {h,l} when');
+  assertScope(guarded, 'when', 'keyword.control.when');
+  assertScope(guarded, 'scrolling', 'constant.other.layout');
+
+  const block = lineWith(lines, 'alt + {n,m} [');
+  assertScope(block, '[', 'punctuation.definition.block.begin');
+  assertScope(lineWith(lines, 'Firefox : echo {c,d}'), 'Firefox', 'entity.name.type.process');
+  assertScope(lineWith(lines, 'Default : echo {e,f}'), 'Default', 'keyword.other.default');
+
+  // a brace in the command is not a group, and is left to the shell
+  const command = lineWith(lines, 'Get-Process');
+  assertNotContains(command, 'Get-Process', 'meta.brace.expansion');
+});
+
 test('mistakes are marked invalid, like the parser rejects them', async () => {
   const layouts = await fixture('invalid/unknown-layout.whkdrc');
   assertScope(lineWith(layouts, 'a typo'), 'bpsp', 'invalid.illegal.unknown-layout');
@@ -387,7 +431,7 @@ test('without a valid .shell the commands are plain strings', async () => {
 });
 
 test('valid fixtures contain nothing marked invalid', async () => {
-  for (const name of ['basic', 'blocks', 'when', 'cmd', 'tricky', 'mouse', 'gestures', 'continuation']) {
+  for (const name of ['basic', 'blocks', 'when', 'cmd', 'tricky', 'mouse', 'gestures', 'continuation', 'braces']) {
     const lines = await fixture(`${name}.whkdrc`);
     for (const line of lines) {
       for (const tok of line) {

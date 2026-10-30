@@ -61,6 +61,13 @@ const SNIPPETS: &[&str] = &[
     ".pause_hook x\n",
     " \\",
     " \\\n",
+    "{",
+    "}",
+    ",",
+    "{a,b}",
+    "{_,shift +}",
+    "{1-9}",
+    "{a,b} ",
     "Google Chrome",
     "UltrawideVerticalStack",
     "scrolling",
@@ -204,6 +211,21 @@ fn known_difference(
             .any(|(at, c)| c == '\r' && !source[at + 1..].starts_with('\n'));
         if lone {
             return Some("a lone carriage return");
+        }
+    }
+
+    // what a group stands for is for the parser to say: whether the keys that come out of it are
+    // keys, and whether the groups of the command are as long as those of the hotkey. To the
+    // grammar a group is something between braces that can be next to a key
+    if !parser_accepts && tree_sitter_accepts {
+        let groups = source.lines().any(|line| {
+            line.split([':', '[', '#'])
+                .next()
+                .is_some_and(|hotkey| hotkey.contains('{'))
+        });
+
+        if groups {
+            return Some("what a group stands for");
         }
     }
 

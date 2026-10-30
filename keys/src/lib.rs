@@ -251,4 +251,29 @@ mod tests {
         let e = parse("space + swipe3right").unwrap_err();
         assert!(e.message.contains("cannot be held down"), "{}", e.message);
     }
+
+    #[test]
+    fn the_keys_held_with_a_mouse_input_are_checked_in_every_expansion() {
+        let keys = validator();
+        let src = ".shell cmd\n{alt,h} + wheelup : x\n";
+        let error = whkd_parser::parse_with(src, &keys).unwrap_err();
+        assert_eq!(error.message, "`h` cannot be held down with `wheelup`");
+        // at the `h` that was written, not at the text it made
+        assert_eq!(&src[error.span.clone()], "h");
+
+        let fine = whkd_parser::parse_with(
+            ".shell cmd\n{alt,ctrl} + {wheelup,wheeldown} : echo {a,b}\n",
+            &keys,
+        );
+        assert_eq!(fine.unwrap().bindings.len(), 4);
+    }
+
+    #[test]
+    fn a_misspelt_key_in_a_group_gets_a_suggestion() {
+        let keys = validator();
+        let src = ".shell cmd\nalt + {h,retrun} : x\n";
+        let error = whkd_parser::parse_with(src, &keys).unwrap_err();
+        assert_eq!(&src[error.span.clone()], "retrun");
+        assert_eq!(error.help.as_deref(), Some("did you mean `return`?"));
+    }
 }

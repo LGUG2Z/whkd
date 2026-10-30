@@ -1,0 +1,97 @@
+================================================================================
+groups in a hotkey and its command
+================================================================================
+
+.shell pwsh
+
+ctrl + {h,j} : komorebic focus {left,down}
+alt + {_,shift +} {h,j} : komorebic {focus,move} {left,down}
+alt + {1-9} : komorebic focus-workspace {0-8}
+{alt,ctrl} + {wheelup,wheeldown} : echo {up,down}
+{a,b} when Firefox : x
+alt + {k,l} when layout = scrolling : echo {a,b}
+alt + {n,m} [
+    Firefox : echo {c,d}
+    Default : echo {e,f}
+]
+alt + x{1,2} : y
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (shell_directive
+    (shell_name))
+  (binding
+    (hotkeys
+      (key)
+      (group
+        (group_element)
+        (group_element)))
+    (command))
+  (binding
+    (hotkeys
+      (key)
+      (group
+        (group_element)
+        (group_element))
+      (group
+        (group_element)
+        (group_element)))
+    (command))
+  (binding
+    (hotkeys
+      (key)
+      (group
+        (group_element)))
+    (command))
+  (binding
+    (hotkeys
+      (group
+        (group_element)
+        (group_element))
+      (group
+        (group_element)
+        (group_element)))
+    (command))
+  (binding
+    (hotkeys
+      (group
+        (group_element)
+        (group_element)))
+    (when_clause
+      (condition
+        (process_name)))
+    (command))
+  (binding
+    (hotkeys
+      (key)
+      (group
+        (group_element)
+        (group_element)))
+    (when_clause
+      (condition
+        (layout_predicate
+          (comparison)
+          (layout_name))))
+    (command))
+  (block
+    (hotkeys
+      (key)
+      (group
+        (group_element)
+        (group_element)))
+    (entry
+      (condition
+        (process_name))
+      (command))
+    (entry
+      (default)
+      (command)))
+  (binding
+    (hotkeys
+      (key)
+      (key)
+      (group
+        (group_element)
+        (group_element)))
+    (command)))

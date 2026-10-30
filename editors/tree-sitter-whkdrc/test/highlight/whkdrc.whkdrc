@@ -64,3 +64,12 @@ alt + n [
 #   ^ keyword
 ]
 # <- punctuation.bracket
+alt + {_,shift +} {h,j} : x
+#     ^ punctuation.special
+#      ^ constant
+#       ^ punctuation.delimiter
+#        ^ constant
+#               ^ punctuation.special
+{alt,ctrl} + h : x
+# <- punctuation.special
+#^ constant

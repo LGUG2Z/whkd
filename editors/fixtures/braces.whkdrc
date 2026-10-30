@@ -1,0 +1,20 @@
+.shell pwsh
+
+# a group is replaced by each of its elements in turn, in the hotkey and in the command
+ctrl + {h,j,k,l} : komorebic focus {left,down,up,right}
+
+# `_` is nothing, so one line is both the focus and the move bindings
+alt + {_,shift +} {h,j,k,l} : komorebic {focus,move} {left,down,up,right}
+
+# ranges are the characters between
+alt + {1-9} : komorebic focus-workspace {0-8}
+
+{alt,ctrl} + {wheelup,wheeldown} : echo {up,down}
+alt + {h,l} when layout = scrolling : echo {a,b}
+alt + {n,m} [
+    Firefox : echo {c,d}
+    Default : echo {e,f}
+]
+
+# a brace that is part of the command, in a hotkey that has groups
+alt + {x,y} : Get-Process | % \{ $_.Name \} {one,two}

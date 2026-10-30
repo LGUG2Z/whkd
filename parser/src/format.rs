@@ -409,21 +409,49 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    /// Keys joined by ` + `
+    /// Keys joined by ` + `, and `{...}` groups, which are kept as they are. Things that are next
+    /// to each other, without a `+`, as `{_,shift +} {h,j}` is, stay next to each other, with one
+    /// space between them if there was space
     fn hotkeys(&mut self) -> Option<String> {
-        let mut keys = vec![self.key()?];
+        let mut out = String::new();
+        let mut after_plus = false;
 
         loop {
+            let before = self.rest.len();
             self.skip_inline();
-            if !self.eat('+') {
-                break;
+            let spaced = self.rest.len() != before;
+
+            let piece = match self.peek() {
+                Some('+') => {
+                    self.rest = &self.rest[1..];
+                    out.truncate(out.trim_end().len());
+                    out.push_str(" + ");
+                    after_plus = true;
+                    self.skip_inline();
+                    continue;
+                }
+                Some('{') => {
+                    let end = self.rest.find('}')? + 1;
+                    let group = &self.rest[..end];
+                    self.rest = &self.rest[end..];
+                    group
+                }
+                // `when` ends the hotkey, unless it is a key, which it is after a `+`
+                Some(_) if self.keyword(WHEN) && !out.is_empty() && !after_plus => break,
+                Some(c) if is_ident_start(c) || c.is_ascii_digit() => self.key()?,
+                _ => break,
+            };
+
+            if spaced && !after_plus && !out.is_empty() {
+                out.push(' ');
             }
 
-            self.skip_inline();
-            keys.push(self.key()?);
+            out.push_str(piece);
+            after_plus = false;
         }
 
-        Some(keys.join(" + "))
+        let keys = out.trim_end().to_string();
+        (!keys.is_empty()).then_some(keys)
     }
 
     /// Terms joined by ` & `
@@ -974,6 +1002,62 @@ alt + when : y
         check(
             ".shell cmd\nf1:echo \\\n  f2 : y\nlonger_key:z\n",
             ".shell cmd\nf1         : echo \\\n    f2 : y\nlonger_key : z\n",
+        );
+    }
+
+    #[test]
+    fn groups_in_a_hotkey_are_kept_as_they_are() {
+        check(
+            ".shell cmd\nalt+{h,j}:echo {a,b}\nalt+{ h ,  j }:echo {a,b}\n",
+            ".shell cmd\nalt + {h,j}      : echo {a,b}\nalt + { h ,  j } : echo {a,b}\n",
+        );
+    }
+
+    #[test]
+    fn groups_next_to_each_other_stay_next_to_each_other() {
+        check(
+            ".shell cmd\nalt+{_,shift +}   {h,j}:x\nalt + {_,shift +}{h,j}:x\n",
+            ".shell cmd\nalt + {_,shift +} {h,j} : x\nalt + {_,shift +}{h,j}  : x\n",
+        );
+    }
+
+    #[test]
+    fn spacing_around_a_plus_next_to_a_group_is_normalised() {
+        check(
+            ".shell cmd\n{alt,ctrl}+h:x\n{alt,ctrl}  +  {h,j}:x\n",
+            ".shell cmd\n{alt,ctrl} + h     : x\n{alt,ctrl} + {h,j} : x\n",
+        );
+    }
+
+    #[test]
+    fn groups_and_guards_and_blocks() {
+        check(
+            ".shell cmd\nalt+{h,j}   when   layout=bsp:echo {a,b}\n{a,b} when Firefox:x\nalt+{k,l}[\n Firefox:echo {c,d}\n  Default:echo {e,f}\n]\n",
+            ".shell cmd\nalt + {h,j} when layout = bsp : echo {a,b}\n{a,b} when Firefox            : x\nalt + {k,l} [\n    Firefox : echo {c,d}\n    Default : echo {e,f}\n]\n",
+        );
+    }
+
+    #[test]
+    fn a_key_named_when_after_a_group_is_a_key() {
+        check(
+            ".shell cmd\n{a,b}+when:x\n",
+            ".shell cmd\n{a,b} + when : x\n",
+        );
+    }
+
+    #[test]
+    fn braces_in_commands_are_left_alone() {
+        check(
+            ".shell pwsh\nalt+h:Get-Process | % { $_.Name }   # note\nalt + {h,j}:echo \\{x\\} {a,b}\n",
+            ".shell pwsh\nalt + h     : Get-Process | % { $_.Name } # note\nalt + {h,j} : echo \\{x\\} {a,b}\n",
+        );
+    }
+
+    #[test]
+    fn expansions_that_continue_onto_the_next_line_are_formatted_as_commands() {
+        check(
+            ".shell cmd\n{alt,ctrl}+{h,j}:echo {a,b} \\\n {c,d}\n",
+            ".shell cmd\n{alt,ctrl} + {h,j} : echo {a,b} \\\n    {c,d}\n",
         );
     }
 }

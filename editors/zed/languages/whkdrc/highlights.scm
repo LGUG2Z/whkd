@@ -29,6 +29,11 @@
 [":"] @punctuation.delimiter
 ["[" "]"] @punctuation.bracket
 
+; `{a,b}`: the elements of a group are keys, but are only read when it is expanded
+(group ["{" "}"] @punctuation.special)
+(group "," @punctuation.delimiter)
+(group_element) @constant
+
 (app_predicate "app" @variable.parameter)
 (layout_predicate "layout" @variable.parameter)
 

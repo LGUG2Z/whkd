@@ -13,6 +13,20 @@ pub const KEY_SEPARATOR: char = '+';
 /// Separates the left-hand side of a binding from its command
 pub const DELIMITER: char = ':';
 
+/// `{a,b}` and `{1-9}` in a hotkey and its command stand for several bindings
+pub const GROUP_OPEN: char = '{';
+pub const GROUP_CLOSE: char = '}';
+pub const GROUP_SEPARATOR: char = ',';
+
+/// `a-e` in a group is `a`, `b`, `c`, `d` and `e`
+pub const RANGE_SEPARATOR: char = '-';
+
+/// An element of a group that is nothing: `{_,shift +}`
+pub const EMPTY_ELEMENT: &str = "_";
+
+/// Before a brace in a command to make it part of the command, not a group
+pub const ESCAPE: char = '\\';
+
 pub const BLOCK_OPEN: char = '[';
 pub const BLOCK_CLOSE: char = ']';
 

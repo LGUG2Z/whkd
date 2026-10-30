@@ -99,7 +99,19 @@ fn alternation(words: &[String]) -> String {
 
 pub fn grammar(vocabulary: &Vocabulary) -> Value {
     let key = format!("(?:{IDENT}|[0-9]+)");
-    let keys = format!(r"{key}(?:[ \t]*\+[ \t]*{key})*");
+
+    // `{a,b}`: a group has no braces in it, and is on one line
+    let (group_open, group_close) = (
+        escape(&syntax::GROUP_OPEN.to_string()),
+        escape(&syntax::GROUP_CLOSE.to_string()),
+    );
+    let group = format!(r"{group_open}[^{group_open}{group_close}\n]*{group_close}");
+
+    // keys joined by `+`; a group may also be next to something else, as `{{_,shift +}} {{h,j}}` is
+    let part = format!("(?:{key}|{group})");
+    let keys = format!(
+        r"{part}(?:(?:[ \t]*\+[ \t]*|[ \t]*(?={group_open})|(?<={group_close})[ \t]*){part})*"
+    );
     let layouts = vocabulary
         .layouts
         .iter()
@@ -125,6 +137,54 @@ pub fn grammar(vocabulary: &Vocabulary) -> Value {
 
     add(
         "hotkey".into(),
+        json!({
+            "patterns": [
+                { "include": "#group" },
+                { "include": "#hotkey-part" }
+            ]
+        }),
+    );
+
+    // the elements of a group are keys, and `_` is nothing, and `1-9` is a range
+    add(
+        "group".into(),
+        json!({
+            "match": group,
+            "captures": {
+                "0": {
+                    "name": "meta.brace.expansion.whkdrc",
+                    "patterns": [
+                        {
+                            "name": "punctuation.definition.group.whkdrc",
+                            "match": format!("[{group_open}{group_close}]")
+                        },
+                        {
+                            "name": "punctuation.separator.group.whkdrc",
+                            "match": escape(&syntax::GROUP_SEPARATOR.to_string())
+                        },
+                        {
+                            "name": "constant.language.empty.whkdrc",
+                            "match": format!(
+                                "{BEFORE_WORD}{}{AFTER_WORD}",
+                                escape(syntax::EMPTY_ELEMENT)
+                            )
+                        },
+                        {
+                            "name": "constant.other.range.whkdrc",
+                            "match": format!(
+                                r"{BEFORE_WORD}[0-9A-Za-z]{}[0-9A-Za-z]{AFTER_WORD}",
+                                escape(&syntax::RANGE_SEPARATOR.to_string())
+                            )
+                        },
+                        { "include": "#hotkey-part" }
+                    ]
+                }
+            }
+        }),
+    );
+
+    add(
+        "hotkey-part".into(),
         json!({
             "patterns": [
                 {

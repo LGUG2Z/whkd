@@ -92,8 +92,32 @@ module.exports = grammar({
     // a bare process name, which may be spelt like a predicate when nothing follows it
     process_name: ($) => choice($._process_name, '@@APP@@', '@@LAYOUT@@'),
 
-    hotkeys: ($) => seq($.key, repeat(seq('@@KEY_SEPARATOR@@', $.key))),
+    // keys joined by `+`. A group, `{a,b}`, may also be next to a key or another group without one:
+    // what it stands for has the `+` in it (`{_,shift +} {h,j}`)
+    hotkeys: ($) =>
+      seq($._hotkey_part, repeat(seq('@@KEY_SEPARATOR@@', $._hotkey_part))),
+    // text can be next to a group, as `x{1,2}` and `{a,b}4up` are, and is a key once it has been
+    // expanded
+    _hotkey_part: ($) =>
+      choice(
+        $.key,
+        seq(
+          optional($.key),
+          repeat1(seq($.group, optional(alias($._word, $.key)))),
+        ),
+      ),
+    _word: (_) => /[\p{L}\p{N}_]+/,
     key: (_) => token(choice(/[\p{L}_][\p{L}\p{N}_]*/, /[0-9]+/)),
+
+    // `{a,b}`, `{_,shift +}` and `{1-9}`: what is in it is for the parser to read
+    group: ($) =>
+      seq(
+        '@@GROUP_OPEN@@',
+        optional($.group_element),
+        repeat(seq('@@GROUP_SEPARATOR@@', optional($.group_element))),
+        '@@GROUP_CLOSE@@',
+      ),
+    group_element: (_) => /[^{},\r\n]+/,
 
     // the rest of the line, up to a comment. A `\` that ends a line, after a space (or at the start
     // of the command), goes on to the next
@@ -153,6 +177,9 @@ pub fn grammar_js(vocabulary: &Vocabulary) -> String {
         .replace("@@NOT_EQUALS@@", syntax::NOT_EQUALS)
         .replace("@@EQUALS@@", &syntax::EQUALS.to_string())
         .replace("@@KEY_SEPARATOR@@", &syntax::KEY_SEPARATOR.to_string())
+        .replace("@@GROUP_OPEN@@", &syntax::GROUP_OPEN.to_string())
+        .replace("@@GROUP_CLOSE@@", &syntax::GROUP_CLOSE.to_string())
+        .replace("@@GROUP_SEPARATOR@@", &syntax::GROUP_SEPARATOR.to_string())
 }
 
 /// `alt`, `Alt` and `ALT`: `#any-of?` compares exactly, and the regex dialects of the editors that
@@ -274,6 +301,11 @@ pub fn highlights(vocabulary: &Vocabulary) -> String {
 ["{delimiter}"] @punctuation.delimiter
 ["{block_open}" "{block_close}"] @punctuation.bracket
 
+; `{{a,b}}`: the elements of a group are keys, but are only read when it is expanded
+(group ["{group_open}" "{group_close}"] @punctuation.special)
+(group "{group_separator}" @punctuation.delimiter)
+(group_element) @constant
+
 (app_predicate "{app}" @variable.parameter)
 (layout_predicate "{layout}" @variable.parameter)
 
@@ -296,6 +328,9 @@ pub fn highlights(vocabulary: &Vocabulary) -> String {
         delimiter = syntax::DELIMITER,
         block_open = syntax::BLOCK_OPEN,
         block_close = syntax::BLOCK_CLOSE,
+        group_open = syntax::GROUP_OPEN,
+        group_close = syntax::GROUP_CLOSE,
+        group_separator = syntax::GROUP_SEPARATOR,
         app = syntax::APP,
         layout = syntax::LAYOUT,
         ignore = syntax::IGNORE,
